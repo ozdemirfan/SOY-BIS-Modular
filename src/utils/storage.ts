@@ -10,6 +10,7 @@ import { apiDelete, apiGet, apiPost } from '../services/apiClient';
 
 // Hostingte env gömülmese bile shared DB modunun zorunlu çalışması için true.
 const API_ENABLED = true;
+const MAX_DB_INT_ID = 2147483647;
 
 // Backup interface
 interface BackupData {
@@ -35,6 +36,33 @@ interface StorageStats {
 interface UserWithPassword extends Partial<User> {
   sifre?: string;
   sifreHash?: string;
+}
+
+function isValidDbIntId(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= MAX_DB_INT_ID;
+}
+
+function generateDbSafeId(existingIds: number[]): number {
+  const usedIds = new Set(existingIds.filter(isValidDbIntId));
+  const baseId = Date.now() % MAX_DB_INT_ID;
+
+  // Deterministik bir aralıkta ilerleyerek çakışmasız ve INT uyumlu ID üret.
+  for (let offset = 0; offset < 10000; offset++) {
+    const candidate = ((baseId + offset) % MAX_DB_INT_ID) || 1;
+    if (!usedIds.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  // Çok düşük olasılıklı yoğun çakışma durumunda rastgele fallback.
+  for (let attempt = 0; attempt < 10000; attempt++) {
+    const candidate = Math.floor(Math.random() * MAX_DB_INT_ID) + 1;
+    if (!usedIds.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error('Uygun ID üretilemedi, lütfen tekrar deneyin.');
 }
 
 /**
@@ -414,6 +442,10 @@ export function aidatlariGetir(): Aidat[] {
  */
 export function aidatKaydet(aidat: Partial<Aidat> & { id?: number }): Aidat {
   const aidatlar = aidatlariGetir();
+  const requestedId = Number(aidat.id ?? 0);
+  const aidatId = isValidDbIntId(requestedId)
+    ? requestedId
+    : generateDbSafeId(aidatlar.map(a => Number(a.id || 0)));
 
   // KRİTİK KONTROL: Borç kayıtları için kayıt tarihi kontrolü
   // Eğer borç kaydı (Aidat veya Malzeme) oluşturuluyorsa ve dönem, sporcunun kayıt tarihinden önceki bir ay ise → İZİN VERME
@@ -443,7 +475,7 @@ export function aidatKaydet(aidat: Partial<Aidat> & { id?: number }): Aidat {
   }
 
   const yeniAidat: Aidat = {
-    id: aidat.id || Date.now() + Math.floor(Math.random() * 1000), // ID çakışma riskini azalt
+    id: aidatId,
     kayitTarihi: aidat.kayitTarihi || new Date().toISOString(),
     sporcuId: aidat.sporcuId || 0,
     donemAy: aidat.donemAy || 1,
@@ -457,7 +489,10 @@ export function aidatKaydet(aidat: Partial<Aidat> & { id?: number }): Aidat {
   kaydet(STORAGE_KEYS.AIDATLAR, aidatlar);
 
   if (API_ENABLED) {
-    void apiPost('/aidatlar', yeniAidat).catch(() => {});
+    void apiPost('/aidatlar', yeniAidat).catch(error => {
+      console.error('Aidat backend kaydı başarısız:', error);
+      toast('Ödeme yerelde kaydedildi ancak sunucuya yazılamadı. Lütfen bağlantıyı kontrol edin.', 'warning');
+    });
   }
 
   return yeniAidat;

@@ -34,6 +34,9 @@ function aidatlar_upsert(): void {
   if ($id <= 0) {
     respondJson(['error' => 'Aidat id gerekli'], 400);
   }
+  if ($id > 2147483647) {
+    respondJson(['error' => 'Aidat id INT aralığında olmalı (1..2147483647)'], 400);
+  }
 
   $data = $aidat;
   $data['id'] = $id;
