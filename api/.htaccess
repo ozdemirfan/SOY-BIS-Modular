@@ -1,0 +1,10 @@
+RewriteEngine On
+AddDefaultCharset UTF-8
+AddCharset UTF-8 .php .json
+
+# Eğer istenen dosya/dizin yoksa tüm istekleri api/index.php'ye yönlendir.
+# Böylece /api/auth/login gibi "rewrite" gerektirmeyen endpoint'ler çalışır.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [QSA,L]
+

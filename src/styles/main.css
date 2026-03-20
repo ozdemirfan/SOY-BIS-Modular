@@ -1,0 +1,14 @@
+/**
+ * SOY-BIS v3.0 - Main Styles Entry Point
+ * This file imports the main stylesheet
+ */
+
+/* Import the existing styles (will be migrated to modular CSS) */
+@import url('../../css/styles.css');
+@import url('../../css/sporcu-rapor.css');
+@import url('./yoklama-responsive.css');
+
+/* Future: Modular CSS imports */
+/* @import './variables.css'; */
+/* @import './components.css'; */
+/* @import './utilities.css'; */

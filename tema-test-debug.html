@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Tema Butonu Debug Test</title>
+    <style>
+        body {
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        body.light-mode {
+            background-color: #ffffff;
+            color: #000000;
+        }
+        body:not(.light-mode) {
+            background-color: #0a0e27;
+            color: #ffffff;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            border: 2px solid #ccc;
+            border-radius: 8px;
+        }
+        .theme-toggle-btn {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: 2px solid currentColor;
+            background: transparent;
+            color: inherit;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .theme-toggle-btn:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(0,0,0,0.1);
+            border-radius: 8px;
+        }
+        .success { color: #38a169; }
+        .error { color: #e53e3e; }
+        .info { color: #00bcd4; }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🌓 Tema Butonu Debug Test</h1>
+        
+        <button class="theme-toggle-btn" id="themeToggle">
+            <i class="fa-solid fa-moon" id="themeIcon"></i>
+            <span>Tema Değiştir</span>
+        </button>
+        
+        <div class="status" id="status">
+            <h3>Test Durumu:</h3>
+            <p id="statusText" class="info">Test başlatılıyor...</p>
+        </div>
+        
+        <div class="status">
+            <h3>Mevcut Durum:</h3>
+            <p><strong>Tema:</strong> <span id="currentTheme">-</span></p>
+            <p><strong>localStorage:</strong> <span id="localStorageTheme">-</span></p>
+            <p><strong>Body Class:</strong> <span id="bodyClass">-</span></p>
+            <p><strong>Event Listener:</strong> <span id="eventListenerStatus">-</span></p>
+        </div>
+        
+        <div class="status">
+            <h3>Test Log:</h3>
+            <pre id="testLog" style="max-height: 300px; overflow-y: auto; font-size: 12px;"></pre>
+        </div>
+    </div>
+
+    <script>
+        // Test helper functions
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('testLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'success' ? '#38a169' : type === 'error' ? '#e53e3e' : '#00bcd4';
+            logEl.innerHTML += `<span style="color: ${color}">[${timestamp}] ${message}</span>\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        
+        function updateStatus() {
+            const isLight = document.body.classList.contains('light-mode');
+            const stored = localStorage.getItem('soybis_theme');
+            
+            document.getElementById('currentTheme').textContent = isLight ? 'Aydınlık 🌞' : 'Koyu 🌙';
+            document.getElementById('localStorageTheme').textContent = stored || 'Ayarlanmamış';
+            document.getElementById('bodyClass').textContent = document.body.className || 'Boş';
+            
+            // Event listener kontrolü
+            const btn = document.getElementById('themeToggle');
+            const hasListener = btn && btn.onclick !== null;
+            document.getElementById('eventListenerStatus').textContent = hasListener ? '✅ Var' : '❌ Yok';
+        }
+        
+        // Tema değiştirme fonksiyonu (SOY-BIS'teki ile aynı)
+        function temaDegistir() {
+            log('temaDegistir() çağrıldı', 'info');
+            
+            const isLightMode = document.body.classList.contains('light-mode');
+            
+            if (isLightMode) {
+                log('Koyu moda geçiliyor...', 'info');
+                document.body.classList.remove('light-mode');
+                localStorage.setItem('soybis_theme', 'dark');
+            } else {
+                log('Aydınlık moda geçiliyor...', 'info');
+                document.body.classList.add('light-mode');
+                localStorage.setItem('soybis_theme', 'light');
+            }
+            
+            temaIkonunuGuncelle();
+            updateStatus();
+            log('Tema değiştirildi! ✅', 'success');
+        }
+        
+        // Icon güncelleme
+        function temaIkonunuGuncelle() {
+            const themeIcon = document.getElementById('themeIcon');
+            if (!themeIcon) return;
+            
+            const isLightMode = document.body.classList.contains('light-mode');
+            
+            if (isLightMode) {
+                themeIcon.className = 'fa-solid fa-sun';
+            } else {
+                themeIcon.className = 'fa-solid fa-moon';
+            }
+        }
+        
+        // Tema yönetimini başlat (SOY-BIS'teki ile aynı mantık)
+        function temaYonetiminiBaslat() {
+            log('temaYonetiminiBaslat() çağrıldı', 'info');
+            
+            // localStorage'dan tema tercihini oku
+            const kayitliTema = localStorage.getItem('soybis_theme');
+            const sistemTemasi = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+            const tema = kayitliTema || sistemTemasi;
+            
+            log(`Kayıtlı tema: ${kayitliTema || 'YOK'}, Sistem teması: ${sistemTemasi}`, 'info');
+            
+            // Tema uygula
+            if (tema === 'light') {
+                document.body.classList.add('light-mode');
+                log('Aydınlık tema uygulandı', 'success');
+            } else {
+                document.body.classList.remove('light-mode');
+                log('Koyu tema uygulandı', 'success');
+            }
+            
+            // Tema ikonunu güncelle
+            temaIkonunuGuncelle();
+            
+            // Tema değiştirme butonuna event listener ekle
+            const themeToggle = document.getElementById('themeToggle');
+            if (themeToggle) {
+                // Eski listener'ı kaldır (duplicate önleme)
+                themeToggle.onclick = null;
+                
+                // Yeni listener ekle
+                themeToggle.addEventListener('click', temaDegistir);
+                log('Event listener eklendi ✅', 'success');
+            } else {
+                log('❌ themeToggle butonu bulunamadı!', 'error');
+            }
+            
+            updateStatus();
+        }
+        
+        // Sayfa yüklendiğinde başlat
+        window.addEventListener('DOMContentLoaded', () => {
+            log('=== TEST BAŞLATILDI ===', 'info');
+            log('SOY-BIS Tema Butonu Debug Test v1.0', 'info');
+            
+            // Tema yönetimini başlat
+            temaYonetiminiBaslat();
+            
+            // İlk durumu göster
+            updateStatus();
+            
+            // Test talimatları
+            document.getElementById('statusText').innerHTML = `
+                <span class="success">✅ Test hazır!</span><br>
+                <strong>Yapılacaklar:</strong><br>
+                1. "Tema Değiştir" butonuna tıklayın<br>
+                2. Tema değişmeli (koyu ↔ aydınlık)<br>
+                3. Sayfayı yenileyin (F5)<br>
+                4. Tema korunmalı ve buton çalışmalı<br>
+                5. Console'da hata olmamalı
+            `;
+            
+            log('Test hazır! Butona tıklayabilirsiniz.', 'success');
+        });
+        
+        // Otomatik test (5 saniye sonra)
+        setTimeout(() => {
+            log('=== OTOMATİK TEST BAŞLIYOR ===', 'info');
+            
+            // 5 kez tema değiştir
+            for (let i = 0; i < 5; i++) {
+                setTimeout(() => {
+                    log(`Test ${i + 1}/5: Tema değiştiriliyor...`, 'info');
+                    temaDegistir();
+                }, i * 1000);
+            }
+            
+            setTimeout(() => {
+                log('=== OTOMATİK TEST TAMAMLANDI ===', 'success');
+                log('Tema 5 kez değiştirildi. Hata yoksa test başarılı! ✅', 'success');
+            }, 5500);
+        }, 5000);
+    </script>
+</body>
+</html>

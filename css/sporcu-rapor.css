@@ -1,0 +1,1511 @@
+/* ==========================================
+   SPORCU DETAY RAPORU STİLLERİ
+   Apple-inspired, Mobile-first Design
+   ========================================== */
+
+/* === BASE CONTAINER === */
+/* View varsayılan olarak gizli - sadece active olduğunda görünür */
+/* SADECE RAPOR EKRANI - Sporcu listesine karışmaması için */
+#sporcu-detay-raporu {
+  display: none;
+  /* Sporcu listesi ile karışmaması için izole et */
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+#sporcu-detay-raporu.active {
+  display: block;
+  /* Masaüstünde view'in en üstten başlaması için */
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  /* Flex container içindeyse en üstten başla */
+  align-self: flex-start;
+  /* Sporcu listesi ile karışmaması için */
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* SADECE RAPOR EKRANI - Sporcu listesine karışmaması için */
+#sporcu-detay-raporu .sporcu-rapor-container {
+  padding: 1rem;
+  max-width: 100%;
+  margin: 0;
+  /* Container'ın en üstten başlaması için */
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  position: relative;
+}
+
+/* === HEADER === */
+/* SADECE RAPOR EKRANI - Sporcu listesine karışmaması için */
+#sporcu-detay-raporu .rapor-header {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  margin-top: 0 !important;
+  background: var(--bg-card);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 100 !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: visible;
+  /* Header'ın hamburger menünün altına hizalanmaması için */
+  align-self: flex-start;
+  /* Container'ın en üstünden başlaması için */
+  order: -1;
+}
+
+
+/* SADECE RAPOR EKRANI - Sporcu listesine karışmaması için */
+#sporcu-detay-raporu .rapor-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-heading);
+  margin: 0;
+  flex: 1;
+  text-align: center;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Mobil görünümde title'ı grid'in ilk satırına yerleştir */
+/* SADECE RAPOR EKRANI */
+@media (max-width: 768px) {
+  #sporcu-detay-raporu .rapor-title {
+    grid-column: 1 / -1 !important;
+    grid-row: 1 !important;
+    order: 1 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: none !important;
+    box-sizing: border-box;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* Butonlar için global stiller - SADECE RAPOR EKRANI */
+/* Sporcu listesine karışmaması için #sporcu-detay-raporu ile scope'la */
+#sporcu-detay-raporu .btn-back,
+#sporcu-detay-raporu .btn-print,
+#sporcu-detay-raporu #raporGeriBtn,
+#sporcu-detay-raporu #raporYazdirBtn,
+#sporcu-detay-raporu button.btn-back,
+#sporcu-detay-raporu button.btn-print,
+#sporcu-detay-raporu button#raporGeriBtn,
+#sporcu-detay-raporu button#raporYazdirBtn,
+#sporcu-detay-raporu .btn-icon.btn-back,
+#sporcu-detay-raporu .btn-icon.btn-print,
+#sporcu-detay-raporu .rapor-header .btn,
+#sporcu-detay-raporu .rapor-header button {
+  min-width: 44px !important;
+  min-height: 44px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  visibility: visible !important;
+  opacity: 1 !important;
+  position: relative !important;
+  z-index: 30 !important;
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  overflow: visible !important; /* styles.css'deki overflow: hidden'ı override et */
+  clip: auto !important;
+  clip-path: none !important;
+  box-sizing: border-box;
+}
+
+/* Tüm ekran boyutlarında butonlar görünür olmalı - Tüm olası selector'ları kapsa */
+.rapor-header .btn-back,
+.rapor-header .btn-print,
+.rapor-header #raporGeriBtn,
+.rapor-header #raporYazdirBtn,
+.rapor-header button.btn-back,
+.rapor-header button.btn-print,
+.rapor-header button#raporGeriBtn,
+.rapor-header button#raporYazdirBtn,
+.rapor-header .btn-icon.btn-back,
+.rapor-header .btn-icon.btn-print,
+.rapor-header .btn,
+.rapor-header button {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  position: relative !important;
+  z-index: 30 !important;
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  overflow: visible !important; /* styles.css'deki overflow: hidden'ı override et */
+  clip: auto !important;
+  clip-path: none !important;
+}
+
+.btn-back:active,
+.btn-print:active {
+  transform: scale(0.95);
+}
+
+/* === CONTENT === */
+/* SADECE RAPOR EKRANI - Sporcu listesine karışmaması için */
+#sporcu-detay-raporu .rapor-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: visible; /* İçerik overflow'u content'e bırak */
+}
+
+/* === ÖZET GRID === */
+/* SADECE RAPOR EKRANI */
+#sporcu-detay-raporu .rapor-ozet-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* === RAPOR CARD === */
+/* SADECE RAPOR EKRANI */
+#sporcu-detay-raporu .rapor-card {
+  background: var(--bg-card);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.rapor-card:active {
+  transform: scale(0.98);
+}
+
+.rapor-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, rgba(49, 130, 206, 0.1) 0%, rgba(49, 130, 206, 0.05) 100%);
+  border-bottom: 1px solid var(--border);
+}
+
+.rapor-card-header i {
+  font-size: 1.25rem;
+  color: var(--accent);
+  background: rgba(49, 130, 206, 0.15);
+  padding: 0.5rem;
+  border-radius: 8px;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rapor-card-header h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-heading);
+  margin: 0;
+}
+
+.rapor-card-body {
+  padding: 1.25rem;
+}
+
+/* === STAT CARDS === */
+.rapor-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.rapor-stat:last-child {
+  border-bottom: none;
+}
+
+.rapor-stat-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.rapor-stat-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-heading);
+}
+
+.rapor-stat-value.text-success {
+  color: var(--success);
+}
+
+.rapor-stat-value.text-danger {
+  color: var(--danger);
+}
+
+/* === INFO GRID === */
+.rapor-info-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+.rapor-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.rapor-info-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.rapor-info-value {
+  font-size: 0.9375rem;
+  color: var(--text-heading);
+  font-weight: 500;
+}
+
+/* === TARİH LİSTESİ === */
+.tarih-listesi {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 400px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tarih-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: var(--bg-input);
+  transition: background 0.2s ease;
+}
+
+.tarih-item:active {
+  background: var(--input-bg-hover);
+}
+
+.tarih-item.tarih-var {
+  border-left: 3px solid var(--success);
+}
+
+.tarih-item.tarih-yok {
+  border-left: 3px solid var(--danger);
+}
+
+.tarih-tarih {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-heading);
+  min-width: 100px;
+}
+
+.tarih-durum {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(49, 130, 206, 0.1);
+  color: var(--accent);
+}
+
+.tarih-item.tarih-var .tarih-durum {
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--success);
+}
+
+.tarih-item.tarih-yok .tarih-durum {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+}
+
+.tarih-grup {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-left: auto;
+}
+
+/* === ÖDEME GEÇMİŞİ === */
+.odeme-gecmisi-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.odeme-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 8px;
+  background: var(--bg-input);
+  border-left: 3px solid var(--border);
+  transition: all 0.2s ease;
+}
+
+.odeme-item.odendi {
+  border-left-color: var(--success);
+  background: rgba(34, 197, 94, 0.05);
+}
+
+.odeme-item.borclu {
+  border-left-color: var(--danger);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.odeme-donem {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-heading);
+  min-width: 120px;
+}
+
+.odeme-tutar {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--text-heading);
+  min-width: 100px;
+}
+
+.odeme-durum {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  margin-left: auto;
+}
+
+.odeme-tarih {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-left: auto;
+}
+
+/* === MOBILE FIRST (Base: < 769px) === */
+@media (max-width: 768px) {
+  /* Modern Bottom Sheet Pattern - Profesyonel Mobil Tasarım */
+  #sporcu-detay-raporu.active {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1001; /* Hamburger menü butonundan (z-index: 1000) daha yüksek */
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    animation: fadeInMobile 0.35s cubic-bezier(0.4, 0.0, 0.2, 1);
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+  }
+  
+  /* Modern fade-in animasyonu */
+  @keyframes fadeInMobile {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  /* Body scroll'u engelle - JavaScript ile yapılıyor, CSS'te gerek yok */
+
+  /* Overlay tıklanınca kapat */
+  #sporcu-detay-raporu::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: -1;
+  }
+
+  /* Modern Mobil Container - Glassmorphism & Depth */
+  #sporcu-detay-raporu .sporcu-rapor-container {
+    width: 100%;
+    max-width: 100%;
+    max-height: 100vh !important; /* Viewport height'ı aşmasın */
+    height: 100vh !important; /* Tam viewport height - JavaScript ile override edilebilir */
+    background: linear-gradient(180deg, 
+      rgba(15, 23, 42, 0.98) 0%, 
+      rgba(15, 23, 42, 0.95) 100%);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-radius: 24px 24px 0 0;
+    padding: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    animation: slideUpModern 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    box-shadow: 
+      0 -8px 32px rgba(0, 0, 0, 0.4),
+      0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+    position: relative;
+    z-index: 1;
+    box-sizing: border-box;
+    align-items: stretch;
+    justify-content: flex-start;
+    margin: 0;
+    /* Height JavaScript ile dinamik ayarlanacak, CSS fallback olarak 100vh */
+  }
+  
+  /* Modern slide-up animasyonu */
+  @keyframes slideUpModern {
+    from {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  
+  /* Light mode için container */
+  body.light-mode #sporcu-detay-raporu .sporcu-rapor-container {
+    background: linear-gradient(180deg, 
+      rgba(255, 255, 255, 0.98) 0%, 
+      rgba(255, 255, 255, 0.95) 100%);
+    box-shadow: 
+      0 -8px 32px rgba(0, 0, 0, 0.15),
+      0 0 0 1px rgba(0, 0, 0, 0.05) inset;
+  }
+
+  /* Container'ın header'ı overflow ile kesmemesi için */
+  #sporcu-detay-raporu .sporcu-rapor-container .rapor-header {
+    overflow: visible !important;
+    min-height: auto !important;
+    position: relative !important;
+    z-index: 20 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Modern Content Area - Smooth Scrolling */
+  #sporcu-detay-raporu .sporcu-rapor-container .rapor-content {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 16px 12px 16px 12px !important;
+    -webkit-overflow-scrolling: touch !important;
+    scroll-behavior: smooth !important;
+    position: relative !important;
+    z-index: 1 !important;
+    min-height: 200px !important;
+    /* Base CSS'te zaten flex var, sadece gap'i override et */
+    gap: 16px !important;
+    /* Modern scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  }
+  
+  #sporcu-detay-raporu .sporcu-rapor-container .rapor-content::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  #sporcu-detay-raporu .sporcu-rapor-container .rapor-content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  #sporcu-detay-raporu .sporcu-rapor-container .rapor-content::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+  }
+  
+  #sporcu-detay-raporu .sporcu-rapor-container .rapor-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+  
+  /* Tüm kartların görünür olması için - Tüm seviyelerde */
+  #sporcu-detay-raporu .rapor-content .rapor-card {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: auto !important;
+    width: 100% !important;
+    margin-bottom: 20px !important;
+    position: relative !important;
+    overflow: visible !important;
+  }
+  
+  /* Tüm direkt child'ların görünür olması için (comment'ler hariç) */
+  #sporcu-detay-raporu .rapor-content > div {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: auto !important;
+    width: 100% !important;
+  }
+  
+  /* Özet grid'in görünür olması için */
+  #sporcu-detay-raporu .rapor-content .rapor-ozet-grid {
+    display: grid !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: auto !important;
+  }
+  
+  /* Özet grid içindeki kartlar - Mobilde tek sütun */
+  #sporcu-detay-raporu .rapor-content .rapor-ozet-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 20px !important;
+    width: 100% !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+  
+  #sporcu-detay-raporu .rapor-content .rapor-ozet-grid .rapor-card {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: auto !important;
+    margin-bottom: 0 !important;
+  }
+  
+  /* Özet grid dışındaki tüm kartların görünür olması için */
+  #sporcu-detay-raporu .rapor-content > .rapor-card:not(.rapor-ozet-grid .rapor-card) {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: auto !important;
+    width: 100% !important;
+    margin-bottom: 20px !important;
+  }
+
+  /* Modern Drag Handle - iOS 15+ Style */
+  #sporcu-detay-raporu .sporcu-rapor-container::before {
+    content: '';
+    width: 36px;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+    margin: 12px auto 8px auto;
+    opacity: 0.6;
+    flex-shrink: 0;
+    transition: opacity 0.2s ease;
+  }
+  
+  body.light-mode #sporcu-detay-raporu .sporcu-rapor-container::before {
+    background: rgba(0, 0, 0, 0.2);
+  }
+
+  /* Modern Mobil Header - Clean & Minimal */
+  #sporcu-detay-raporu .rapor-header {
+    padding: 12px 16px 10px 16px !important;
+    margin: 0 !important;
+    margin-bottom: 0 !important;
+    border-radius: 0;
+    position: sticky !important;
+    top: 0;
+    flex-shrink: 0;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    grid-template-rows: auto auto !important;
+    gap: 10px !important;
+    column-gap: 10px !important;
+    row-gap: 10px !important;
+    align-items: stretch !important;
+    justify-content: stretch !important;
+    align-content: stretch !important;
+    overflow: visible !important;
+    min-height: auto !important;
+    background: transparent !important;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    z-index: 20 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  
+  body.light-mode #sporcu-detay-raporu .rapor-header {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  }
+
+  /* Modern Title - Typography */
+  #sporcu-detay-raporu .rapor-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    width: 100% !important;
+    max-width: 100% !important;
+    text-align: center;
+    grid-column: 1 / -1 !important;
+    grid-row: 1 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-heading);
+    line-height: 1.2;
+  }
+
+  /* SADECE RAPOR EKRANI - Mobil butonlar */
+  #sporcu-detay-raporu .rapor-header .rapor-title {
+    grid-column: 1 / -1 !important;
+    grid-row: 1 !important;
+    order: 1 !important;
+  }
+
+  /* Modern Action Buttons - iOS Style */
+  #sporcu-detay-raporu .rapor-header .btn-back,
+  #sporcu-detay-raporu .rapor-header #raporGeriBtn,
+  #sporcu-detay-raporu .rapor-header button.btn-back,
+  #sporcu-detay-raporu .rapor-header button#raporGeriBtn,
+  #sporcu-detay-raporu .rapor-header .btn-icon.btn-back,
+  #sporcu-detay-raporu .rapor-header .btn {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    min-height: 44px !important;
+    margin: 0 !important;
+    padding: 10px 12px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: relative !important;
+    z-index: 30 !important;
+    order: 2 !important;
+    flex: none !important;
+    flex-shrink: 1 !important;
+    flex-grow: 0 !important;
+    overflow: visible !important;
+    clip: auto !important;
+    clip-path: none !important;
+    transform: none !important;
+    pointer-events: auto !important;
+    cursor: pointer !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-radius: 10px !important;
+    color: var(--text-heading) !important;
+    font-weight: 600 !important;
+    font-size: 0.875rem !important;
+    box-sizing: border-box !important;
+    transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+  
+  #sporcu-detay-raporu .rapor-header .btn-back:active,
+  #sporcu-detay-raporu .rapor-header #raporGeriBtn:active {
+    transform: scale(0.96) !important;
+    background: rgba(255, 255, 255, 0.12) !important;
+  }
+  
+  body.light-mode #sporcu-detay-raporu .rapor-header .btn-back,
+  body.light-mode #sporcu-detay-raporu .rapor-header #raporGeriBtn {
+    background: rgba(0, 0, 0, 0.04) !important;
+    border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  }
+
+  /* SADECE RAPOR EKRANI - Mobil icon'lar */
+  #sporcu-detay-raporu .rapor-header .btn-back i,
+  #sporcu-detay-raporu .rapor-header #raporGeriBtn i,
+  #sporcu-detay-raporu .rapor-header .btn-print i,
+  #sporcu-detay-raporu .rapor-header #raporYazdirBtn i {
+    display: inline-block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    font-size: 1rem !important;
+  }
+
+  /* Modern Print Button */
+  #sporcu-detay-raporu .rapor-header .btn-print,
+  #sporcu-detay-raporu .rapor-header #raporYazdirBtn,
+  #sporcu-detay-raporu .rapor-header button.btn-print,
+  #sporcu-detay-raporu .rapor-header button#raporYazdirBtn,
+  #sporcu-detay-raporu .rapor-header .btn-icon.btn-print {
+    grid-column: 2 !important;
+    grid-row: 2 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    min-height: 44px !important;
+    margin: 0 !important;
+    padding: 10px 12px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: relative !important;
+    z-index: 30 !important;
+    order: 3 !important;
+    flex: none !important;
+    flex-shrink: 1 !important;
+    flex-grow: 0 !important;
+    overflow: visible !important;
+    clip: auto !important;
+    clip-path: none !important;
+    transform: none !important;
+    pointer-events: auto !important;
+    cursor: pointer !important;
+    background: linear-gradient(135deg, rgba(49, 130, 206, 0.2) 0%, rgba(49, 130, 206, 0.15) 100%) !important;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(49, 130, 206, 0.3) !important;
+    border-radius: 10px !important;
+    color: var(--accent) !important;
+    font-weight: 600 !important;
+    font-size: 0.875rem !important;
+    box-sizing: border-box !important;
+    transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1) !important;
+    box-shadow: 0 2px 8px rgba(49, 130, 206, 0.2);
+  }
+  
+  #sporcu-detay-raporu .rapor-header .btn-print:active,
+  #sporcu-detay-raporu .rapor-header #raporYazdirBtn:active {
+    transform: scale(0.96) !important;
+    background: linear-gradient(135deg, rgba(49, 130, 206, 0.25) 0%, rgba(49, 130, 206, 0.2) 100%) !important;
+  }
+
+  /* Bu eski tanım kaldırıldı - yukarıdaki modern tanım kullanılıyor */
+
+  /* Modern Card Design - Glassmorphism */
+  #sporcu-detay-raporu .rapor-card {
+    border-radius: 14px;
+    margin-bottom: 16px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding: 0 !important;
+    background: rgba(255, 255, 255, 0.05) !important;
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    box-shadow: 
+      0 4px 16px rgba(0, 0, 0, 0.2),
+      0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+    transition: all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+    overflow: hidden;
+  }
+  
+  /* Son kartın altında boşluk kalmaması için */
+  #sporcu-detay-raporu .rapor-content > *:last-child,
+  #sporcu-detay-raporu .rapor-content > *:last-child .rapor-card:last-child {
+    margin-bottom: 0 !important;
+  }
+  
+  #sporcu-detay-raporu .rapor-card:active {
+    transform: scale(0.98);
+    box-shadow: 
+      0 2px 8px rgba(0, 0, 0, 0.15),
+      0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  }
+  
+  body.light-mode #sporcu-detay-raporu .rapor-card {
+    background: rgba(255, 255, 255, 0.7) !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    box-shadow: 
+      0 4px 16px rgba(0, 0, 0, 0.08),
+      0 0 0 1px rgba(0, 0, 0, 0.02) inset;
+  }
+
+  /* Modern Card Header */
+  .rapor-card-header {
+    padding: 14px 16px;
+    font-size: 0.9375rem;
+    background: linear-gradient(135deg, 
+      rgba(49, 130, 206, 0.12) 0%, 
+      rgba(49, 130, 206, 0.06) 100%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  
+  body.light-mode .rapor-card-header {
+    background: linear-gradient(135deg, 
+      rgba(49, 130, 206, 0.08) 0%, 
+      rgba(49, 130, 206, 0.04) 100%);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  }
+
+  .rapor-card-header h3 {
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+    margin: 0 !important;
+    color: var(--text-heading);
+  }
+
+  .rapor-card-header i {
+    font-size: 1.25rem !important;
+    color: var(--accent) !important;
+    background: rgba(49, 130, 206, 0.2) !important;
+    padding: 8px !important;
+    border-radius: 8px !important;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  /* Modern Card Body */
+  .rapor-card-body {
+    padding: 16px;
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: var(--text-body);
+  }
+  
+  /* Modern Info Grid */
+  .rapor-info-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+  
+  .rapor-info-item {
+    padding: 16px !important;
+    background: rgba(255, 255, 255, 0.03) !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    transition: all 0.2s ease;
+  }
+  
+  .rapor-info-item:active {
+    transform: scale(0.98);
+    background: rgba(255, 255, 255, 0.05) !important;
+  }
+  
+  body.light-mode .rapor-info-item {
+    background: rgba(0, 0, 0, 0.02) !important;
+    border: 1px solid rgba(0, 0, 0, 0.06) !important;
+  }
+  
+  .rapor-info-label {
+    font-size: 0.8125rem !important;
+    margin-bottom: 6px !important;
+    color: var(--text-secondary) !important;
+    font-weight: 500 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  
+  .rapor-info-value {
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+    color: var(--text-heading) !important;
+    line-height: 1.4;
+  }
+  
+  /* Modern Tables */
+  .rapor-card table {
+    width: 100% !important;
+    font-size: 0.875rem !important;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  
+  .rapor-card table th {
+    padding: 14px 12px !important;
+    font-size: 0.8125rem !important;
+    line-height: 1.5 !important;
+    font-weight: 700 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary) !important;
+    background: rgba(255, 255, 255, 0.05) !important;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.1) !important;
+  }
+  
+  .rapor-card table td {
+    padding: 14px 12px !important;
+    font-size: 0.875rem !important;
+    line-height: 1.6 !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  }
+  
+  .rapor-card table tr:last-child td {
+    border-bottom: none !important;
+  }
+  
+  body.light-mode .rapor-card table th {
+    background: rgba(0, 0, 0, 0.03) !important;
+    border-bottom: 2px solid rgba(0, 0, 0, 0.08) !important;
+  }
+  
+  body.light-mode .rapor-card table td {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.04) !important;
+  }
+  
+  /* Modern Stat Cards */
+  .rapor-stat {
+    padding: 16px !important;
+    font-size: 0.9375rem !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background 0.2s ease;
+  }
+  
+  .rapor-stat:last-child {
+    border-bottom: none !important;
+  }
+  
+  .rapor-stat:active {
+    background: rgba(255, 255, 255, 0.03) !important;
+  }
+  
+  body.light-mode .rapor-stat {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
+  }
+  
+  .rapor-stat-label {
+    font-size: 0.8125rem !important;
+    margin-bottom: 0 !important;
+    color: var(--text-secondary) !important;
+    font-weight: 500 !important;
+  }
+  
+  .rapor-stat-value {
+    font-size: 1.25rem !important;
+    font-weight: 700 !important;
+    color: var(--text-heading) !important;
+  }
+  
+  /* Modern Summary Grid */
+  .rapor-summary-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  .tarih-listesi {
+    max-height: 250px;
+  }
+
+  .tarih-item {
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    font-size: 0.875rem;
+  }
+
+  .tarih-tarih {
+    min-width: auto;
+    width: 100%;
+  }
+  
+  /* Küçük ekranlar için ek optimizasyonlar (360px ve altı) */
+  @media (max-width: 360px) {
+    #sporcu-detay-raporu .rapor-header {
+      padding: 10px 12px 8px 12px !important;
+      gap: 8px !important;
+      row-gap: 8px !important;
+    }
+    
+    #sporcu-detay-raporu .rapor-title {
+      font-size: 1.125rem !important;
+    }
+    
+    #sporcu-detay-raporu .rapor-header .btn-back,
+    #sporcu-detay-raporu .rapor-header #raporGeriBtn,
+    #sporcu-detay-raporu .rapor-header .btn-print,
+    #sporcu-detay-raporu .rapor-header #raporYazdirBtn {
+      min-height: 40px !important;
+      padding: 8px 10px !important;
+      font-size: 0.8125rem !important;
+    }
+    
+    #sporcu-detay-raporu .sporcu-rapor-container .rapor-content {
+      padding: 12px 10px 12px 10px !important;
+      gap: 12px !important;
+    }
+    
+    .rapor-card-header {
+      padding: 12px 14px !important;
+    }
+    
+    .rapor-card-header h3 {
+      font-size: 0.9375rem !important;
+    }
+    
+    .rapor-card-header i {
+      width: 32px !important;
+      height: 32px !important;
+      font-size: 1.125rem !important;
+      padding: 6px !important;
+    }
+    
+    .rapor-card-body {
+      padding: 14px !important;
+      font-size: 0.8125rem !important;
+    }
+    
+    #sporcu-detay-raporu .rapor-card {
+      margin-bottom: 12px !important;
+      border-radius: 12px !important;
+    }
+  }
+  
+  /* Çok küçük ekranlar için (320px ve altı) */
+  @media (max-width: 320px) {
+    #sporcu-detay-raporu .rapor-header {
+      padding: 8px 10px 6px 10px !important;
+      gap: 6px !important;
+      row-gap: 6px !important;
+    }
+    
+    #sporcu-detay-raporu .rapor-title {
+      font-size: 1rem !important;
+    }
+    
+    #sporcu-detay-raporu .rapor-header .btn-back,
+    #sporcu-detay-raporu .rapor-header #raporGeriBtn,
+    #sporcu-detay-raporu .rapor-header .btn-print,
+    #sporcu-detay-raporu .rapor-header #raporYazdirBtn {
+      min-height: 38px !important;
+      padding: 6px 8px !important;
+      font-size: 0.75rem !important;
+    }
+    
+    #sporcu-detay-raporu .sporcu-rapor-container .rapor-content {
+      padding: 10px 8px 10px 8px !important;
+      gap: 10px !important;
+    }
+    
+    .rapor-card-header {
+      padding: 10px 12px !important;
+    }
+    
+    .rapor-card-header h3 {
+      font-size: 0.875rem !important;
+    }
+    
+    .rapor-card-header i {
+      width: 28px !important;
+      height: 28px !important;
+      font-size: 1rem !important;
+      padding: 5px !important;
+    }
+    
+    .rapor-card-body {
+      padding: 12px !important;
+      font-size: 0.75rem !important;
+    }
+    
+    #sporcu-detay-raporu .rapor-card {
+      margin-bottom: 10px !important;
+      border-radius: 10px !important;
+    }
+  }
+
+  .tarih-grup {
+    margin-left: 0;
+  }
+
+  .odeme-item {
+    flex-wrap: wrap;
+    padding: 0.875rem;
+  }
+
+  .odeme-donem {
+    min-width: auto;
+    width: 100%;
+  }
+
+  .odeme-tarih {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
+/* === TABLET (769px - 1024px) === */
+@media (min-width: 769px) {
+  .sporcu-rapor-container {
+    padding: 1.5rem;
+    max-width: 900px;
+  }
+
+  .rapor-ozet-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .rapor-info-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .tarih-listesi {
+    max-height: 500px;
+  }
+
+  /* Tablet ve masaüstünde butonlar görünür olmalı */
+  .rapor-header .btn-back,
+  .rapor-header .btn-print {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+}
+
+/* === DESKTOP (> 1024px) === */
+@media (min-width: 1024px) {
+  /* Full Page View - Sadece active olduğunda görünür */
+  /* View artık .content-area içinde, normal akışta */
+  #sporcu-detay-raporu.active {
+    position: static !important;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    display: block !important;
+    overflow-y: visible !important;
+    scroll-behavior: smooth;
+    scroll-margin-top: 0;
+    width: 100% !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    align-self: flex-start !important;
+  }
+
+  .sporcu-rapor-container {
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+    max-height: none;
+    border-radius: 12px;
+    box-shadow: none;
+    background: transparent;
+    width: 100%;
+  }
+
+  /* Masaüstünde butonlar görünür olmalı */
+  .rapor-header .btn-back,
+  .rapor-header .btn-print {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  .sporcu-rapor-container::before {
+    display: none;
+  }
+
+  .rapor-title {
+    font-size: 1.5rem;
+  }
+
+  .rapor-card-header h3 {
+    font-size: 1.125rem;
+  }
+
+  .rapor-info-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .tarih-listesi {
+    max-height: 600px;
+  }
+}
+
+/* === PRINT STYLES === */
+@media print {
+  .sporcu-rapor-container {
+    padding: 0;
+    max-width: 100%;
+  }
+
+  .rapor-header {
+    position: static;
+    page-break-inside: avoid;
+    margin-bottom: 1rem;
+  }
+
+  .btn-back,
+  .btn-print {
+    display: none;
+  }
+
+  .rapor-card {
+    page-break-inside: avoid;
+    margin-bottom: 1rem;
+    box-shadow: none;
+    border: 1px solid #ddd;
+  }
+
+  .tarih-listesi {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .tarih-item {
+    page-break-inside: avoid;
+  }
+
+  .odeme-item {
+    page-break-inside: avoid;
+  }
+}
+
+/* === DARK MODE SUPPORT === */
+body.dark-mode .rapor-card {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+body.dark-mode .rapor-card-header {
+  background: linear-gradient(135deg, rgba(49, 130, 206, 0.15) 0%, rgba(49, 130, 206, 0.05) 100%);
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+body.dark-mode .tarih-item,
+body.dark-mode .odeme-item {
+  background: rgba(30, 41, 59, 0.6);
+}
+
+/* === LIGHT MODE SUPPORT === */
+body.light-mode .rapor-card {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+body.light-mode .rapor-card-header {
+  background: linear-gradient(135deg, rgba(49, 130, 206, 0.08) 0%, rgba(49, 130, 206, 0.03) 100%);
+  border-bottom-color: rgba(0, 0, 0, 0.1);
+}
+
+body.light-mode .tarih-item,
+body.light-mode .odeme-item {
+  background: rgba(248, 250, 252, 0.8);
+}
+
+/* === ANIMATIONS === */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* === TABLET (769px - 1024px) === */
+@media (min-width: 769px) and (max-width: 1023px) {
+  /* SADECE RAPOR EKRANI - Tablet View */
+  #sporcu-detay-raporu.active {
+    position: static !important;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  #sporcu-detay-raporu .sporcu-rapor-container {
+    max-height: 90vh !important; /* Tablet için viewport height'ın %90'ı */
+    height: auto !important;
+    border-radius: 12px;
+    box-shadow: var(--shadow-card);
+    background: var(--bg-card);
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 1rem !important;
+    box-sizing: border-box !important;
+    overflow: hidden;
+  }
+
+  #sporcu-detay-raporu .sporcu-rapor-container::before {
+    display: none;
+  }
+
+  #sporcu-detay-raporu .rapor-header {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    overflow: visible !important;
+  }
+
+  #sporcu-detay-raporu .rapor-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  /* Tablet görünümünde butonlar görünür olmalı */
+  #sporcu-detay-raporu .rapor-header .btn-back,
+  #sporcu-detay-raporu .rapor-header .btn-print {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: relative !important;
+    z-index: 1 !important;
+    box-sizing: border-box !important;
+  }
+}
+
+/* === DESKTOP (1024px+) === */
+@media (min-width: 1024px) {
+  /* SADECE RAPOR EKRANI - Masaüstü View */
+  #sporcu-detay-raporu.active {
+    position: static !important;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  #sporcu-detay-raporu .sporcu-rapor-container {
+    max-height: none !important;
+    height: auto !important;
+    border-radius: 12px;
+    box-shadow: var(--shadow-card);
+    background: var(--bg-card);
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 1.5rem !important;
+    box-sizing: border-box !important;
+    overflow: hidden;
+  }
+
+  #sporcu-detay-raporu .sporcu-rapor-container::before {
+    display: none;
+  }
+
+  #sporcu-detay-raporu .rapor-header {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    overflow: visible !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+  }
+
+  #sporcu-detay-raporu .rapor-title {
+    width: auto !important;
+    max-width: none !important;
+    flex: 1 !important;
+    text-align: center !important;
+    white-space: normal !important;
+    overflow: visible !important;
+  }
+
+  #sporcu-detay-raporu .rapor-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    padding: 0 1rem 1.5rem 1rem !important;
+  }
+
+  #sporcu-detay-raporu .rapor-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Masaüstü görünümünde butonlar görünür olmalı */
+  #sporcu-detay-raporu .rapor-header .btn-back,
+  #sporcu-detay-raporu .rapor-header .btn-print {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: relative !important;
+    z-index: 1 !important;
+    box-sizing: border-box !important;
+    width: auto !important;
+    min-width: 44px !important;
+  }
+}
+

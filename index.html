@@ -1,0 +1,1875 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SOY-BIS | Spor Okulları Yönetim Bilgi Sistemi</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="/logo.png">
+    
+    <!-- External Libraries (CDN - will be replaced with npm packages) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Vite will handle module bundling -->
+</head>
+<body>
+    <!-- Login Overlay -->
+    <div id="loginOverlay" class="login-overlay hidden" style="display: none !important;">
+        <div class="login-container">
+            <div class="login-header">
+                <img src="/logo.png" alt="Logo" class="login-logo">
+                <h1>SOY-BIS</h1>
+                <p class="login-subtitle">Spor Okulları Yönetim Bilgi Sistemi</p>
+            </div>
+            <form id="loginForm" class="login-form">
+                <div class="form-group">
+                    <label for="loginKullaniciAdi">
+                        <i class="fa-solid fa-user"></i> Kullanıcı Adı
+                    </label>
+                    <input type="text" id="loginKullaniciAdi" required autocomplete="username" placeholder="Kullanıcı adınızı girin">
+                </div>
+                <div class="form-group">
+                    <label for="loginSifre">
+                        <i class="fa-solid fa-lock"></i> Şifre
+                    </label>
+                    <input type="password" id="loginSifre" required autocomplete="current-password" placeholder="Şifrenizi girin">
+                </div>
+                <div id="loginError" class="login-error" style="display: none;">
+                    <i class="fa-solid fa-exclamation-circle"></i>
+                    <span id="loginErrorText"></span>
+                </div>
+                <button type="submit" class="btn btn-success btn-block">
+                    <i class="fa-solid fa-sign-in-alt"></i> Giriş Yap
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Splash Screen -->
+    <div id="splashScreen" class="splash-screen hidden" style="display: none !important;">
+        <div class="splash-content">
+            <img src="/logo.png" alt="Logo" class="splash-logo">
+            <div class="splash-text">
+                <h1>SOY-BIS</h1>
+                <p>Spor Okulları Yönetim Bilgi Sistemi</p>
+            </div>
+            <div class="splash-loader">
+                <div class="loader-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-container" style="display: none;">
+        <!-- Mobile Floating Menu Button (Bottom Right) -->
+        <button class="mobile-fab-menu" id="hamburgerBtn" aria-label="Menü" aria-expanded="false" title="">
+            <span class="hamburger-line"></span>
+            <span class="hamburger-line"></span>
+            <span class="hamburger-line"></span>
+        </button>
+        
+        <!-- Mobile Menu Overlay -->
+        <div class="mobile-menu-overlay" id="mobileMenuOverlay"></div>
+        
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <img src="/logo.png" alt="Logo" class="sidebar-logo">
+                <h2>SOY-BIS</h2>
+                <span class="sidebar-tagline">Sports Management</span>
+                <!-- Close Button (Mobile Only) -->
+                <button class="sidebar-close-btn" id="sidebarCloseBtn" aria-label="Menüyü kapat">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+                <!-- Desktop Hamburger Button (Sidebar içinde) - Chevron Left -->
+                <button class="desktop-hamburger-btn" id="desktopSidebarToggle" aria-label="Menüyü kapat" title="Menüyü kapat">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+            </div>
+            <nav class="nav" id="mainNav">
+                <div class="nav-indicator" id="navIndicator"></div>
+                <button class="active" data-target="dashboard" data-rol="Yönetici,Muhasebe">
+                    <i class="fa-solid fa-gauge-high"></i> Gösterge Paneli
+                </button>
+                <button data-target="sporcu-kayit" data-rol="Yönetici">
+                    <i class="fa-solid fa-user-plus"></i> Sporcu Kayıt
+                </button>
+                <button data-target="sporcu-listesi" data-rol="Yönetici,Antrenör">
+                    <i class="fa-solid fa-users"></i> Sporcu Listesi
+                </button>
+                <button data-target="aidat" data-rol="Yönetici,Muhasebe">
+                    <i class="fa-solid fa-wallet"></i> Aidat Takip
+                </button>
+                <button data-target="yoklama" data-rol="Yönetici,Antrenör">
+                    <i class="fa-solid fa-clipboard-check"></i> Yoklama
+                </button>
+                <button data-target="giderler" data-rol="Yönetici,Muhasebe">
+                    <i class="fa-solid fa-money-bill-wave"></i> Gider Yönetimi
+                </button>
+                <button data-target="antrenorler" data-rol="Yönetici">
+                    <i class="fa-solid fa-user-tie"></i> Antrenörler
+                </button>
+                <button data-target="raporlar" data-rol="Yönetici,Muhasebe">
+                    <i class="fa-solid fa-file-contract"></i> Raporlar
+                </button>
+                <button data-target="kullanici-yonetimi" data-rol="Yönetici">
+                    <i class="fa-solid fa-users-gear"></i> Kullanıcı Yönetimi
+                </button>
+                <button data-target="ayarlar" data-rol="Yönetici">
+                    <i class="fa-solid fa-cog"></i> Ayarlar
+                </button>
+            </nav>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="app-header">
+            <!-- Desktop Floating Hamburger Button (Sidebar kapalıyken görünür - Sadece masaüstünde) -->
+            <button class="desktop-hamburger-menu-btn" id="desktopMenuToggle" aria-label="Menüyü aç" title="Menüyü aç">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+                <div class="brand">
+                    <img src="/logo.png" alt="Logo" class="header-logo" onerror="this.style.display='none';" style="display: none;">
+                    <div class="brand-text">
+                        <h1>SOY-BIS</h1>
+                        <p>Spor Okulları Yönetim Bilgi Sistemi</p>
+                    </div>
+                </div>
+                <div class="meta">
+                    <!-- Tema Değiştirme Butonu -->
+                    <button class="theme-toggle-btn" id="themeToggle" aria-label="Tema değiştir" title="Tema değiştir">
+                        <i class="fa-solid fa-moon" id="themeIcon"></i>
+                    </button>
+                    <span id="nowDate" class="header-date"></span>
+                    <span class="header-divider"></span>
+                    <div class="header-user-info" id="headerUser" style="display: none;">
+                        <span class="user-name" id="userName">Sistem Yöneticisi</span>
+                        <span class="user-role-badge" id="userRoleBadge">Yönetici</span>
+                    </div>
+                    <button class="btn btn-logout" id="logoutBtn" title="Çıkış Yap" style="display: none;">
+                        <i class="fa-solid fa-right-from-bracket"></i>
+                        <span>Çıkış</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Content Section -->
+            <section class="content-area">
+                <!-- Dashboard View -->
+                <div id="dashboard" class="view active">
+                    <div class="card card-primary">
+                        <div class="card-header">
+                            <h1><i class="fa-solid fa-chart-pie" style="color: #f59e0b;"></i> Gösterge Paneli</h1>
+                        </div>
+                        <p class="welcome-text">
+                            Hoş geldiniz! Spor kulübü yönetim sisteminde güncel durumu buradan takip edebilirsiniz.
+                        </p>
+                        
+                        <!-- Hızlı Erişim -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h1><i class="fa-solid fa-bolt"></i> Hızlı Erişim</h1>
+                            </div>
+                            <div class="quick-actions" id="quickActions">
+                                <!-- Dinamik olarak doldurulacak -->
+                            </div>
+                        </div>
+                        
+                        <!-- 1. Satır: FİNANSAL DURUM (Tam Genişlik) -->
+                        <div class="stats-grid-financial">
+                            <div class="stat-card-large" id="kasaCard">
+                                <div class="stat-icon"><i class="fa-solid fa-vault"></i></div>
+                                <div class="stat-content">
+                                    <div class="stat-label">FİNANSAL DURUM</div>
+                                    <div class="finansal-durum-detay">
+                                        <!-- Nakit ve Banka Yatay Düzen -->
+                                        <div class="financial-horizontal">
+                                            <div class="financial-item">
+                                                <div class="financial-detail-row">
+                                                    <span class="financial-icon">💵</span>
+                                                    <span class="financial-label">Nakit</span>
+                                                </div>
+                                                <div class="financial-value financial-positive" id="nakitDurum">0 TL</div>
+                                            </div>
+                                            <div class="financial-item">
+                                                <div class="financial-detail-row">
+                                                    <span class="financial-icon">🏦</span>
+                                                    <span class="financial-label">Banka</span>
+                                                </div>
+                                                <div class="financial-value financial-positive banka-durum" id="bankaDurum">0 TL</div>
+                                            </div>
+                                        </div>
+                                        <!-- Toplam Kasa -->
+                                        <div class="financial-total">
+                                            <div class="financial-detail-row">
+                                                <span class="financial-icon">💰</span>
+                                                <span class="financial-label">Nakit + Banka = Toplam Kasa</span>
+                                            </div>
+                                            <div class="financial-value financial-positive" id="toplamKasa">0 TL</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 2. Satır: 4 Kart (Aktif Sporcu, Tahsilat, Kalan Alacak Toplamı, Gider) -->
+                        <div class="stats-grid-simple">
+                            <!-- 1. Aktif Sporcu -->
+                            <div class="stat-card-large">
+                                <div class="stat-icon"><i class="fa-solid fa-users"></i></div>
+                                <div class="stat-content">
+                                    <div class="stat-label">Aktif Sporcu</div>
+                                    <div class="stat-value" id="aktifSporcu">0</div>
+                                </div>
+                            </div>
+                            
+                            <!-- 2. Tahsilat -->
+                            <div class="stat-card-large" id="tahsilatCard">
+                                <div class="stat-icon"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+                                <div class="stat-content">
+                                    <div class="stat-label">Tahsilat</div>
+                                    <div class="stat-value financial-positive" id="tahsilat">0 TL</div>
+                                    <div class="stat-detail">
+                                        <span id="tahsilatOrani">%0</span> · 
+                                        Kalan: <span id="kalanAlacak">0 TL</span>
+                                    </div>
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" id="tahsilatProgress" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 3. Kalan Alacak Toplamı (Yeni) -->
+                            <div class="stat-card-large stat-card-warning">
+                                <div class="stat-icon"><i class="fa-solid fa-credit-card"></i></div>
+                                <div class="stat-content">
+                                    <div class="stat-label">Kalan Alacak Toplamı</div>
+                                    <div class="stat-value financial-negative" id="kalanAlacakToplami">0 TL</div>
+                                </div>
+                            </div>
+                            
+                            <!-- 4. Gider -->
+                            <div class="stat-card-large stat-card-danger">
+                                <div class="stat-icon"><i class="fa-solid fa-money-bill-transfer"></i></div>
+                                <div class="stat-content">
+                                    <div class="stat-label">Gider</div>
+                                    <div class="stat-value financial-negative" id="gider">0 TL</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Belge Uyarıları -->
+                    <div class="card" id="belgeUyariCard" style="display: none;">
+                        <div class="card-header">
+                            <h1><i class="fa-solid fa-triangle-exclamation"></i> Belge Uyarıları</h1>
+                        </div>
+                        <div class="belge-uyari-container" id="belgeUyariList">
+                            <!-- Dinamik doldurulacak -->
+                        </div>
+                    </div>
+                    
+                    <!-- Hatırlatılacaklar -->
+                    <div class="card" id="hatirlatilacaklarCard" style="display: none;">
+                        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                            <h1><i class="fa-solid fa-bell"></i> Hatırlatılacaklar</h1>
+                            <button class="btn btn-small" id="topluHatirlatmaBtn" onclick="Notification.topluHatirlatmaGonder(hatirlatilacaklarListesi, 'inApp')" style="display: none;">
+                                <i class="fa-solid fa-paper-plane"></i> Toplu Hatırlatma
+                            </button>
+                        </div>
+                        <div class="belge-uyari-container" id="hatirlatilacaklarList">
+                            <!-- Dinamik doldurulacak -->
+                        </div>
+                    </div>
+                    
+                    <!-- Grafikler -->
+                    <div class="charts-grid">
+                        <div class="card chart-card">
+                            <div class="card-header">
+                                <h2><i class="fa-solid fa-chart-column"></i> Aylık Tahsilat</h2>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="tahsilatChart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="card chart-card">
+                            <div class="card-header">
+                                <h2><i class="fa-solid fa-chart-pie"></i> Branş Dağılımı</h2>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="bransChart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="card chart-card">
+                            <div class="card-header">
+                                <h2><i class="fa-solid fa-chart-line"></i> Gelir - Gider Trendi</h2>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="trendChart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="card chart-card">
+                            <div class="card-header">
+                                <h2><i class="fa-solid fa-users"></i> Yaş Grubu Dağılımı</h2>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="yasGrubuChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Sporcu Kayıt View -->
+                <div id="sporcu-kayit" class="view">
+                    <div class="card">
+                        <div class="card-header">
+                            <h1><i class="fa-solid fa-user-plus"></i> Sporcu Kayıt Formu</h1>
+                            <!-- Eski Kayıt Toggle Butonu - Başlığın Sağında -->
+                            <div class="eski-kayit-toggle-wrapper">
+                                <label for="eskiKayit" class="eski-kayit-toggle">
+                                    <input type="checkbox" id="eskiKayit" name="eskiKayit">
+                                    <div class="toggle-switch">
+                                        <span class="toggle-slider"></span>
+                                    </div>
+                                    <div class="toggle-label">
+                                        <i class="fa-solid fa-clock-rotate-left"></i>
+                                        <span>Eski Kayıt</span>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <!-- Wizard Stepper -->
+                        <div class="wizard-stepper" id="wizardStepper">
+                            <div class="wizard-step active" data-step="1">
+                                <div class="wizard-step-number">1</div>
+                                <div class="wizard-step-label">Temel Bilgiler</div>
+                            </div>
+                            <div class="wizard-step-line"></div>
+                            <div class="wizard-step" data-step="2">
+                                <div class="wizard-step-number">2</div>
+                                <div class="wizard-step-label">Finansal Bilgiler</div>
+                            </div>
+                            <div class="wizard-step-line"></div>
+                            <div class="wizard-step" data-step="3">
+                                <div class="wizard-step-number">3</div>
+                                <div class="wizard-step-label">Özet & Onay</div>
+                            </div>
+                        </div>
+                        
+                        <div class="form-container">
+                            <form id="sporcuKayitForm">
+                                <input type="hidden" id="sporcuIdGuncelle">
+                                
+                                <!-- ADIM 1: TEMEL BİLGİLER -->
+                                <div class="wizard-step-content active" data-wizard-step="1">
+                                
+                                <!-- 1. SPORCU KİMLİĞİ (EN ÖNEMLİ - EN ÜSTTE) -->
+                                <div class="form-section form-section-priority form-section-light">
+                                    <h2 class="section-title"><i class="fa-solid fa-id-card"></i> Sporcu Kimliği</h2>
+                                    <div class="form-grid">
+                                        <div class="form-group">
+                                            <label for="adSoyad"><i class="fa-solid fa-user"></i> Ad Soyad *</label>
+                                            <input type="text" id="adSoyad" required minlength="3" placeholder="Örn: Ahmet Yılmaz">
+                                            <small class="error-text" id="adSoyadError"></small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="dogumTarihi"><i class="fa-solid fa-calendar"></i> Doğum Tarihi *</label>
+                                            <input type="date" id="dogumTarihi" required pattern="\d{4}-\d{2}-\d{2}" maxlength="10">
+                                            <small class="error-text" id="dogumTarihiError"></small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="cinsiyet"><i class="fa-solid fa-venus-mars"></i> Cinsiyet *</label>
+                                            <select id="cinsiyet" required>
+                                                <option value="">Seçiniz</option>
+                                                <option value="Erkek">Erkek</option>
+                                                <option value="Kadın">Kadın</option>
+                                            </select>
+                                            <small class="error-text" id="cinsiyetError"></small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="tcKimlik"><i class="fa-solid fa-credit-card"></i> TC Kimlik No</label>
+                                            <input type="text" id="tcKimlik" maxlength="11" pattern="[0-9]{11}" placeholder="11 haneli TC kimlik (opsiyonel)">
+                                            <small class="error-text" id="tcKimlikError"></small>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- 2. BRANŞ & SPOR BİLGİLERİ -->
+                                <div class="form-section form-section-dark">
+                                    <h2 class="section-title"><i class="fa-solid fa-medal"></i> Branş & Grup Bilgileri</h2>
+                                    <div class="form-grid">
+                                        <div class="form-group">
+                                            <label for="brans"><i class="fa-solid fa-futbol"></i> Branş *</label>
+                                            <select id="brans" required>
+                                                <option value="">Seçiniz</option>
+                                                <option value="Futbol">Futbol</option>
+                                                <option value="Basketbol">Basketbol</option>
+                                                <option value="Voleybol">Voleybol</option>
+                                                <option value="Yüzme">Yüzme</option>
+                                                <option value="Tenis">Tenis</option>
+                                                <option value="Güreş">Güreş</option>
+                                                <option value="Atletizm">Atletizm</option>
+                                            </select>
+                                            <small class="error-text" id="bransError"></small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="autoYasGrubu"><i class="fa-solid fa-users-line"></i> Yaş Grubu</label>
+                                            <div class="auto-calculate" id="autoYasGrubu">Hesaplanacak</div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="formaNo"><i class="fa-solid fa-hashtag"></i> Forma No</label>
+                                            <input type="number" id="formaNo" min="1" max="99" placeholder="1-99">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="kucukYasGrubu"><i class="fa-solid fa-layer-group"></i> Küçük Grup</label>
+                                            <input type="text" id="kucukYasGrubu" placeholder="Örn: A Grubu">
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- 3. İLETİŞİM BİLGİLERİ -->
+                                <div class="form-section form-section-light">
+                                    <h2 class="section-title"><i class="fa-solid fa-phone"></i> İletişim Bilgileri</h2>
+                                    <div class="form-grid">
+                                        <div class="form-group">
+                                            <label for="telefon"><i class="fa-solid fa-mobile-screen"></i> Telefon *</label>
+                                            <input type="tel" id="telefon" required placeholder="5XX XXX XX XX">
+                                            <small class="error-text" id="telefonError"></small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="email"><i class="fa-solid fa-envelope"></i> E-posta</label>
+                                            <input type="email" id="email" placeholder="ornek@email.com">
+                                            <small class="error-text" id="emailError"></small>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- 4. KAYIT BİLGİLERİ -->
+                                <div class="form-section form-section-dark">
+                                    <h2 class="section-title"><i class="fa-solid fa-calendar-check"></i> Kayıt Bilgileri</h2>
+                                    <div class="form-grid">
+                                        <div class="form-group">
+                                            <label for="kayitTarihi"><i class="fa-solid fa-calendar-days"></i> Kayıt Tarihi *</label>
+                                            <input type="date" id="kayitTarihi" required pattern="\d{4}-\d{2}-\d{2}" maxlength="10">
+                                            <small class="error-text" id="kayitTarihiError"></small>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- 5. VELİ BİLGİLERİ -->
+                                <div class="form-section form-section-light">
+                                    <h2 class="section-title"><i class="fa-solid fa-user-group"></i> Veli Bilgileri</h2>
+                                    <div class="form-grid">
+                                        <div class="form-group">
+                                            <label for="veli1Ad"><i class="fa-solid fa-user"></i> 1. Veli Ad Soyad *</label>
+                                            <input type="text" id="veli1Ad" required placeholder="Veli adı soyadı">
+                                            <small class="error-text" id="veli1AdError"></small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="veli1Tel"><i class="fa-solid fa-phone"></i> 1. Veli Telefon *</label>
+                                            <input type="tel" id="veli1Tel" required placeholder="5XX XXX XX XX">
+                                            <small class="error-text" id="veli1TelError"></small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="veli1Yakinlik"><i class="fa-solid fa-heart"></i> 1. Veli Yakınlık *</label>
+                                            <select id="veli1Yakinlik" required>
+                                                <option value="">Seçiniz</option>
+                                                <option value="Anne">Anne</option>
+                                                <option value="Baba">Baba</option>
+                                                <option value="Kardeş">Kardeş</option>
+                                                <option value="Diğer">Diğer</option>
+                                            </select>
+                                            <small class="error-text" id="veli1YakinlikError"></small>
+                                        </div>
+                                        <!-- 2. Veli Bilgileri (Yan yana grup) -->
+                                        <div class="form-group-pair">
+                                            <div class="form-group">
+                                                <label for="veli2Ad"><i class="fa-solid fa-user"></i> 2. Veli Ad Soyad</label>
+                                                <input type="text" id="veli2Ad" placeholder="Veli adı soyadı (opsiyonel)">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="veli2Tel"><i class="fa-solid fa-phone"></i> 2. Veli Telefon</label>
+                                                <input type="tel" id="veli2Tel" placeholder="5XX XXX XX XX (opsiyonel)">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- 6. FİZİKSEL ÖZELLİKLER (Accordion) -->
+                                <div class="form-section form-section-dark accordion-section">
+                                    <div class="accordion-header" data-accordion="fiziksel">
+                                        <h2 class="section-title"><i class="fa-solid fa-ruler"></i> Fiziksel Özellikler</h2>
+                                        <i class="fa-solid fa-chevron-down accordion-icon"></i>
+                                    </div>
+                                    <div class="accordion-content">
+                                        <div class="form-grid">
+                                            <div class="form-group">
+                                                <label for="boy"><i class="fa-solid fa-ruler-vertical"></i> Boy (cm)</label>
+                                                <input type="number" id="boy" min="50" max="250" placeholder="Örn: 170">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="kilo"><i class="fa-solid fa-weight-scale"></i> Kilo (kg)</label>
+                                                <input type="number" id="kilo" min="10" max="200" placeholder="Örn: 65">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="beden"><i class="fa-solid fa-shirt"></i> Beden</label>
+                                                <select id="beden">
+                                                    <option value="">Seçiniz</option>
+                                                    <option value="XS">XS</option>
+                                                    <option value="S">S</option>
+                                                    <option value="M">M</option>
+                                                    <option value="L">L</option>
+                                                    <option value="XL">XL</option>
+                                                    <option value="XXL">XXL</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="ayakNo"><i class="fa-solid fa-shoe-prints"></i> Ayak No</label>
+                                                <input type="number" id="ayakNo" min="20" max="50" placeholder="Örn: 42">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- 7. SAĞLIK BİLGİLERİ (Accordion) -->
+                                <div class="form-section form-section-light accordion-section">
+                                    <div class="accordion-header" data-accordion="saglik">
+                                        <h2 class="section-title"><i class="fa-solid fa-heart-pulse"></i> Sağlık Bilgileri</h2>
+                                        <i class="fa-solid fa-chevron-down accordion-icon"></i>
+                                    </div>
+                                    <div class="accordion-content">
+                                        <div class="form-grid">
+                                            <div class="form-group">
+                                                <label for="kanGrubu"><i class="fa-solid fa-droplet"></i> Kan Grubu</label>
+                                                <select id="kanGrubu">
+                                                    <option value="">Seçiniz</option>
+                                                    <option value="A+">A Rh+</option>
+                                                    <option value="A-">A Rh-</option>
+                                                    <option value="B+">B Rh+</option>
+                                                    <option value="B-">B Rh-</option>
+                                                    <option value="AB+">AB Rh+</option>
+                                                    <option value="AB-">AB Rh-</option>
+                                                    <option value="0+">0 Rh+</option>
+                                                    <option value="0-">0 Rh-</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="alerjiler"><i class="fa-solid fa-exclamation-triangle"></i> Alerjiler</label>
+                                                <textarea id="alerjiler" rows="2" placeholder="Bilinen alerjileri yazınız..."></textarea>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="kronikHastalik"><i class="fa-solid fa-file-medical"></i> Kronik Hastalık</label>
+                                                <textarea id="kronikHastalik" rows="2" placeholder="Kronik hastalıkları yazınız..."></textarea>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- 8. BELGE BİLGİLERİ (Accordion - EN ALTTA - EN AZ ÖNEMLİ) -->
+                                <div class="form-section form-section-last form-section-dark accordion-section">
+                                    <div class="accordion-header" data-accordion="belge">
+                                        <h2 class="section-title"><i class="fa-solid fa-folder-open"></i> Belge Bilgileri</h2>
+                                        <i class="fa-solid fa-chevron-down accordion-icon"></i>
+                                    </div>
+                                    <div class="accordion-content">
+                                        <div class="form-grid">
+                                            <div class="form-group">
+                                                <label for="saglikRaporuTarih"><i class="fa-solid fa-file-medical"></i> Sağlık Raporu Son Geçerlilik</label>
+                                                <input type="date" id="saglikRaporuTarih">
+                                                <small class="help-text">Spor yapabilir raporu son geçerlilik tarihi</small>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="lisansTarih"><i class="fa-solid fa-certificate"></i> Lisans Son Geçerlilik</label>
+                                                <input type="date" id="lisansTarih">
+                                                <small class="help-text">Federasyon lisansı son geçerlilik tarihi</small>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="lisansNo"><i class="fa-solid fa-hashtag"></i> Lisans Numarası</label>
+                                                <input type="text" id="lisansNo" placeholder="Lisans numarası">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="sigortaTarih"><i class="fa-solid fa-shield"></i> Sigorta Son Geçerlilik</label>
+                                                <input type="date" id="sigortaTarih">
+                                                <small class="help-text">Ferdi kaza sigortası bitiş tarihi</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- ADIM 1 SONU -->
+                                </div>
+                                
+                                <!-- ADIM 2: FİNANSAL BİLGİLER -->
+                                <div class="wizard-step-content" data-wizard-step="2">
+                                    <!-- Finansal Bilgiler Kartlı Düzen -->
+                                    <div class="financial-wizard-container">
+                                        <!-- KART 1: AYLIK ÜCRET -->
+                                        <div class="financial-card financial-card-primary">
+                                            <div class="financial-card-header">
+                                                <div class="financial-card-header-icon">
+                                                    <i class="fa-solid fa-money-bill-wave"></i>
+                                                </div>
+                                                <div class="financial-card-header-content">
+                                                    <h3>Aylık Ücret</h3>
+                                                    <p>Aylık ödeme tutarı</p>
+                                                </div>
+                                            </div>
+                                            <div class="financial-card-body">
+                                                <div class="form-group">
+                                                    <label class="radio-label-modern">
+                                                        <input type="radio" name="bursDurumu" id="bursDurumuStandart" value="standart" checked>
+                                                        <span class="radio-custom"></span>
+                                                        <span class="radio-text">
+                                                            <strong>Ücretli Öğrenci</strong>
+                                                            <small>Aylık ücret ödenecek</small>
+                                                        </span>
+                                                    </label>
+                                                    <label class="radio-label-modern">
+                                                        <input type="radio" name="bursDurumu" id="bursDurumuBurslu" value="burslu">
+                                                        <span class="radio-custom"></span>
+                                                        <span class="radio-text">
+                                                            <strong><i class="fa-solid fa-medal"></i> Burslu Öğrenci</strong>
+                                                            <small>Ücretsiz (Burslu)</small>
+                                                        </span>
+                                                    </label>
+                                                </div>
+                                                <div class="form-group" id="aylikUcretGroup">
+                                                    <label for="aylikUcret">
+                                                        <i class="fa-solid fa-coins"></i>
+                                                        <span>Aylık Ücret (TL)</span>
+                                                        <span class="required-star">*</span>
+                                                    </label>
+                                                    <div class="input-with-icon">
+                                                        <i class="fa-solid fa-lira-sign input-icon"></i>
+                                                        <input type="text" id="aylikUcret" placeholder="2.000" required>
+                                                    </div>
+                                                    <small class="error-text" id="aylikUcretError"></small>
+                                                    <div class="quick-amounts">
+                                                        <button type="button" class="btn-quick-amount" data-amount="1500">
+                                                            <span>1.500</span>
+                                                            <small>TL</small>
+                                                        </button>
+                                                        <button type="button" class="btn-quick-amount" data-amount="2000">
+                                                            <span>2.000</span>
+                                                            <small>TL</small>
+                                                        </button>
+                                                        <button type="button" class="btn-quick-amount" data-amount="2500">
+                                                            <span>2.500</span>
+                                                            <small>TL</small>
+                                                        </button>
+                                                        <button type="button" class="btn-quick-amount" data-amount="3000">
+                                                            <span>3.000</span>
+                                                            <small>TL</small>
+                                                        </button>
+                                                    </div>
+                                                    <small class="help-text">
+                                                        <i class="fa-solid fa-info-circle"></i>
+                                                        Ödeme günü otomatik olarak kayıt tarihindeki gün olarak belirlenir.
+                                                    </small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- KART 2: MALZEMELER -->
+                                        <div class="financial-card financial-card-secondary">
+                                            <div class="financial-card-header">
+                                                <div class="financial-card-header-icon">
+                                                    <i class="fa-solid fa-box"></i>
+                                                </div>
+                                                <div class="financial-card-header-content">
+                                                    <h3>Malzemeler</h3>
+                                                    <p>Forma, eşofman vb.</p>
+                                                </div>
+                                                <button type="button" class="btn-add-material" id="malzemeEkleBtn">
+                                                    <i class="fa-solid fa-plus"></i>
+                                                    <span>Ekle</span>
+                                                </button>
+                                            </div>
+                                            <div class="financial-card-body">
+                                                <div id="malzemelerListesi" class="malzemeler-liste">
+                                                    <!-- Dinamik olarak eklenecek -->
+                                                    <div class="empty-state-malzeme">
+                                                        <div class="empty-state-icon">
+                                                            <i class="fa-solid fa-box-open"></i>
+                                                        </div>
+                                                        <h4>Henüz malzeme eklenmedi</h4>
+                                                        <p>Malzeme eklemek için "Ekle" butonuna tıklayın</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- KART 3: İLK AY ÖDEME -->
+                                        <div class="financial-card financial-card-info">
+                                            <div class="financial-card-header">
+                                                <div class="financial-card-header-icon">
+                                                    <i class="fa-solid fa-credit-card"></i>
+                                                </div>
+                                                <div class="financial-card-header-content">
+                                                    <h3>İlk Ay Ödeme</h3>
+                                                    <p>Kayıt ödemesi durumu</p>
+                                                </div>
+                                            </div>
+                                            <div class="financial-card-body">
+                                                <div class="payment-option-cards">
+                                                    <label class="payment-card payment-card-success" for="kayitOdemeAlindi">
+                                                        <input type="radio" name="kayitOdemeDurumu" id="kayitOdemeAlindi" value="alindi" checked>
+                                                        <div class="payment-card-icon">
+                                                            <i class="fa-solid fa-check-circle"></i>
+                                                        </div>
+                                                        <div class="payment-card-content">
+                                                            <strong>Ödeme Alındı</strong>
+                                                            <small>Hasılata yansır</small>
+                                                        </div>
+                                                        <div class="payment-card-check">
+                                                            <i class="fa-solid fa-check"></i>
+                                                        </div>
+                                                    </label>
+                                                    <label class="payment-card payment-card-warning" for="kayitOdemeAlinmadi">
+                                                        <input type="radio" name="kayitOdemeDurumu" id="kayitOdemeAlinmadi" value="alinmadi">
+                                                        <div class="payment-card-icon">
+                                                            <i class="fa-solid fa-clock"></i>
+                                                        </div>
+                                                        <div class="payment-card-content">
+                                                            <strong>Ödeme Alınmadı</strong>
+                                                            <small>Daha sonra ödenecek</small>
+                                                        </div>
+                                                        <div class="payment-card-check">
+                                                            <i class="fa-solid fa-check"></i>
+                                                        </div>
+                                                    </label>
+                                                </div>
+                                                <div class="form-group" id="kayitOdemeYontemiGroup">
+                                                    <label for="kayitOdemeYontemi">
+                                                        <i class="fa-solid fa-wallet"></i>
+                                                        <span>Ödeme Yöntemi</span>
+                                                        <span class="required-star">*</span>
+                                                    </label>
+                                                    <div class="select-with-icon">
+                                                        <i class="fa-solid fa-credit-card select-icon"></i>
+                                                        <select id="kayitOdemeYontemi" required>
+                                                            <option value="">Seçiniz</option>
+                                                            <option value="Nakit">Nakit</option>
+                                                            <option value="Banka / Havale">Banka / Havale</option>
+                                                        </select>
+                                                        <i class="fa-solid fa-chevron-down select-arrow"></i>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- KART 4: ÖZET (Canlı Hesaplama) -->
+                                        <div class="financial-card financial-card-summary">
+                                            <div class="financial-card-header">
+                                                <div class="financial-card-header-icon">
+                                                    <i class="fa-solid fa-calculator"></i>
+                                                </div>
+                                                <div class="financial-card-header-content">
+                                                    <h3>Finansal Özet</h3>
+                                                    <p>Canlı hesaplama</p>
+                                                </div>
+                                            </div>
+                                            <div class="financial-card-body">
+                                                <div class="summary-grid">
+                                                    <div class="summary-item">
+                                                        <div class="summary-item-icon">
+                                                            <i class="fa-solid fa-calendar-dollar"></i>
+                                                        </div>
+                                                        <div class="summary-item-content">
+                                                            <span class="summary-label">Aylık Ücret</span>
+                                                            <span class="summary-value" id="ozetAylikUcret">0,00 TL</span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="summary-item">
+                                                        <div class="summary-item-icon">
+                                                            <i class="fa-solid fa-boxes"></i>
+                                                        </div>
+                                                        <div class="summary-item-content">
+                                                            <span class="summary-label">Malzemeler</span>
+                                                            <span class="summary-value" id="ozetMalzemeler">0,00 TL</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="summary-divider">
+                                                    <span></span>
+                                                </div>
+                                                
+                                                <div class="summary-total-item">
+                                                    <div class="summary-total-icon">
+                                                        <i class="fa-solid fa-receipt"></i>
+                                                    </div>
+                                                    <div class="summary-total-content">
+                                                        <span class="summary-total-label">Toplam Tutar</span>
+                                                        <span class="summary-total-value" id="ozetToplam">0,00 TL</span>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="summary-grid summary-grid-bottom">
+                                                    <div class="summary-item summary-item-success">
+                                                        <div class="summary-item-icon">
+                                                            <i class="fa-solid fa-circle-check"></i>
+                                                        </div>
+                                                        <div class="summary-item-content">
+                                                            <span class="summary-label">İlk Ay Ödeme</span>
+                                                            <span class="summary-value summary-success" id="ozetIlkAyOdeme">0,00 TL</span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="summary-item summary-item-danger">
+                                                        <div class="summary-item-icon">
+                                                            <i class="fa-solid fa-circle-exclamation"></i>
+                                                        </div>
+                                                        <div class="summary-item-content">
+                                                            <span class="summary-label">Kalan Borç</span>
+                                                            <span class="summary-value summary-danger" id="ozetKalanBorc">0,00 TL</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="summary-help">
+                                                    <i class="fa-solid fa-info-circle"></i>
+                                                    <p>Malzemeler için borç kaydı oluşturulur. Ödeme daha sonra "Ödeme Al" menüsünden alınabilir.</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                <!-- ADIM 2 SONU -->
+                                </div>
+                                
+                                <!-- ADIM 3: ÖZET & ONAY -->
+                                <div class="wizard-step-content" data-wizard-step="3">
+                                    <div class="wizard-summary-container">
+                                        <h2 class="section-title"><i class="fa-solid fa-check-circle"></i> Özet & Onay</h2>
+                                        
+                                        <!-- Temel Bilgiler Özeti -->
+                                        <div class="summary-section">
+                                            <h3><i class="fa-solid fa-id-card"></i> Temel Bilgiler</h3>
+                                            <div class="summary-grid" id="ozetTemelBilgiler">
+                                                <!-- Dinamik doldurulacak -->
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Finansal Bilgiler Özeti -->
+                                        <div class="summary-section">
+                                            <h3><i class="fa-solid fa-coins"></i> Finansal Bilgiler</h3>
+                                            <div class="summary-grid" id="ozetFinansalBilgiler">
+                                                <!-- Dinamik doldurulacak -->
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Onay Checkbox -->
+                                        <div class="form-group onay-checkbox-wrapper">
+                                            <label class="checkbox-label onay-label">
+                                                <input type="checkbox" id="onayCheckbox" required>
+                                                <span>Bu bilgilerin doğru olduğunu onaylıyorum ve kaydı tamamlamak istiyorum.</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                
+                                <!-- ADIM 3 SONU -->
+                                </div>
+                                
+                                <!-- Wizard Navigation Buttons -->
+                                <div class="wizard-actions">
+                                    <button type="button" class="btn" id="wizardGeriBtn" style="display: none;">
+                                        <i class="fa-solid fa-arrow-left"></i> Geri
+                                    </button>
+                                    <div class="wizard-actions-spacer"></div>
+                                    <button type="button" class="btn" id="formuTemizleBtn">
+                                        <i class="fa-solid fa-eraser"></i> Formu Temizle
+                                    </button>
+                                    <button type="button" class="btn btn-primary" id="wizardIleriBtn">
+                                        İleri <i class="fa-solid fa-arrow-right"></i>
+                                    </button>
+                                    <button type="submit" class="btn btn-success" id="kaydetBtn" style="display: none;">
+                                        <i class="fa-solid fa-check"></i> Sporcuyu Kaydet
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Sporcu Listesi View -->
+                <div id="sporcu-listesi" class="view">
+                    <div class="card">
+                        <div class="card-header">
+                            <h1><i class="fa-solid fa-users"></i> Sporcu Listesi</h1>
+                        </div>
+                        
+                        <!-- Özet Kartlar -->
+                        <div class="sporcu-summary-cards">
+                            <div class="summary-card">
+                                <div class="summary-card-icon" style="background: rgba(34, 197, 94, 0.1);">
+                                    <i class="fa-solid fa-users" style="color: #22c55e;"></i>
+                                </div>
+                                <div class="summary-card-content">
+                                    <div class="summary-card-label">Toplam Sporcu</div>
+                                    <div class="summary-card-value" id="summaryToplamSporcu">0</div>
+                                </div>
+                            </div>
+                            <div class="summary-card">
+                                <div class="summary-card-icon" style="background: rgba(59, 130, 246, 0.1);">
+                                    <i class="fa-solid fa-user-check" style="color: #3b82f6;"></i>
+                                </div>
+                                <div class="summary-card-content">
+                                    <div class="summary-card-label">Aktif</div>
+                                    <div class="summary-card-value" id="summaryAktifSporcu">0</div>
+                                </div>
+                            </div>
+                            <div class="summary-card">
+                                <div class="summary-card-icon" style="background: rgba(239, 68, 68, 0.1);">
+                                    <i class="fa-solid fa-user-pause" style="color: #ef4444;"></i>
+                                </div>
+                                <div class="summary-card-content">
+                                    <div class="summary-card-label">Pasif</div>
+                                    <div class="summary-card-value" id="summaryPasifSporcu">0</div>
+                                </div>
+                            </div>
+                            <div class="summary-card">
+                                <div class="summary-card-icon" style="background: rgba(168, 85, 247, 0.1);">
+                                    <i class="fa-solid fa-futbol" style="color: #a855f7;"></i>
+                                </div>
+                                <div class="summary-card-content">
+                                    <div class="summary-card-label">Branş Sayısı</div>
+                                    <div class="summary-card-value" id="summaryBransSayisi">0</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="table-container">
+                            <div class="table-toolbar">
+                                <div class="search-box-wrapper">
+                                    <i class="fa-solid fa-search search-icon"></i>
+                                    <input type="text" class="search-box" id="searchBox" placeholder="Sporcu ara (Ad, TC, Branş)...">
+                                </div>
+                                <div class="filter-group">
+                                    <select id="bransFiltre">
+                                        <option value="">Tüm Branşlar</option>
+                                    </select>
+                                    <select id="durumFiltre">
+                                        <option value="">Tüm Durumlar</option>
+                                        <option value="Aktif">Aktif</option>
+                                        <option value="Pasif">Pasif</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="sporcu-list" id="sporcuListesi">
+                            </div>
+                            
+                            <div id="emptyState" class="empty-state">
+                                <i class="fa-solid fa-user-slash"></i>
+                                <h3>Henüz sporcu kaydı bulunmuyor</h3>
+                                <p>İlk sporcu kaydını eklemek için "Sporcu Kayıt" sayfasını kullanın.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Aidat Takip View -->
+                <div id="aidat" class="view">
+                    <!-- Liste Görünümü (EN ÜST) -->
+                    <div id="aidatListCard" class="aidat-panel">
+                        <!-- Header Section -->
+                        <div class="aidat-header">
+                            <div class="aidat-header-top">
+                                <h1 class="aidat-title">
+                                    <i class="fa-solid fa-wallet"></i>
+                                    Aidat Takip
+                                </h1>
+                                <div class="aidat-view-toggle">
+                                    <button type="button" class="view-toggle-btn active" data-view="table" title="Tablo Görünümü">
+                                        <i class="fa-solid fa-table"></i>
+                                    </button>
+                                    <button type="button" class="view-toggle-btn" data-view="card" title="Kart Görünümü">
+                                        <i class="fa-solid fa-grid"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="aidat-header-actions">
+                                <!-- Modern Tab Bar - Sol Taraf: Filtreler -->
+                                <div class="aidat-quick-filters">
+                                    <button type="button" class="aidat-filter-btn active" id="aidatFilterAll" onclick="Aidat.hizliFiltrele('all')">
+                                        Tümü
+                                    </button>
+                                    <button type="button" class="aidat-filter-btn aidat-filter-paid" id="aidatFilterPaid" onclick="Aidat.hizliFiltrele('paid')">
+                                        Ödeyenler
+                                    </button>
+                                    <button type="button" class="aidat-filter-btn aidat-filter-upcoming" id="aidatFilterUpcoming" onclick="Aidat.hizliFiltrele('upcoming')">
+                                        Yaklaşanlar
+                                    </button>
+                                    <button type="button" class="aidat-filter-btn aidat-filter-debt" id="aidatFilterDebt" onclick="Aidat.hizliFiltrele('debt')">
+                                        Ödemeyenler
+                                    </button>
+                                </div>
+                                <!-- Sağ Taraf: Aksiyon Butonları -->
+                                <div class="aidat-action-buttons">
+                                    <button type="button" class="aidat-action-icon-btn" id="topluSmsBtn" onclick="Aidat.topluSmsGonder()" title="Toplu SMS Gönder">
+                                        <i class="fa-solid fa-paper-plane"></i>
+                                    </button>
+                                    <button type="button" class="aidat-action-icon-btn" id="aidatFilterToggle" title="Gelişmiş Filtreler">
+                                        <i class="fa-solid fa-filter"></i>
+                                    </button>
+                                </div>
+                                <!-- Gelişmiş Filtreler (Gizli) -->
+                                <div class="aidat-advanced-filters" id="aidatAdvancedFilters" style="display: none;">
+                                    <select id="aidatFilterBrans" class="aidat-filter-select" title="Branş Filtrele">
+                                        <option value="">Tüm Branşlar</option>
+                                    </select>
+                                    <select id="aidatFilterYasGrubu" class="aidat-filter-select" title="Yaş Grubu Filtrele">
+                                        <option value="">Tüm Yaş Grupları</option>
+                                    </select>
+                                    <select id="aidatFilterBorcAralik" class="aidat-filter-select" title="Borç Aralığı">
+                                        <option value="">Tüm Borçlar</option>
+                                        <option value="0-500">0 - 500 TL</option>
+                                        <option value="500-1000">500 - 1.000 TL</option>
+                                        <option value="1000-2000">1.000 - 2.000 TL</option>
+                                        <option value="2000+">2.000+ TL</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Summary Cards -->
+                        <div class="aidat-summary-grid">
+                            <div class="aidat-summary-item">
+                                <div class="aidat-summary-label">Alacakların Toplamı</div>
+                                <div id="toplamBeklenen" class="aidat-summary-value">0 TL</div>
+                            </div>
+                            <div class="aidat-summary-item">
+                                <div class="aidat-summary-label">Tahsilat</div>
+                                <div id="toplamTahsilat" class="aidat-summary-value aidat-value-success">0 TL</div>
+                            </div>
+                            <div class="aidat-summary-item">
+                                <div class="aidat-summary-label">Kalan</div>
+                                <div id="kalanBorc" class="aidat-summary-value aidat-value-danger">0 TL</div>
+                            </div>
+                            <div class="aidat-summary-item">
+                                <div class="aidat-summary-label">Tahsilat Oranı</div>
+                                <div id="tahsilatYuzde" class="aidat-summary-value">%0</div>
+                            </div>
+                        </div>
+
+                        <!-- Search & Content Container -->
+                        <div class="aidat-content">
+                            <!-- Table Toolbar (Search + Actions) -->
+                            <div class="aidat-table-toolbar">
+                            <div class="aidat-search-wrapper">
+                                <i class="fa-solid fa-search"></i>
+                                    <input type="text" class="aidat-search" id="aidatArama" placeholder="Sporcu ara...">
+                                <button type="button" class="aidat-search-clear" id="aidatSearchClear" style="display: none;" title="Aramayı Temizle">
+                                    <i class="fa-solid fa-times"></i>
+                                </button>
+                            </div>
+                            </div>
+                            
+                            <!-- Table View -->
+                            <div class="aidat-table-wrapper" id="aidatTableView">
+                                <table class="aidat-table aidat-table-high-density">
+                                    <thead>
+                                        <tr>
+                                            <th class="checkbox-col">
+                                                <input type="checkbox" id="aidatTableSelectAll" title="Tümünü Seç">
+                                            </th>
+                                            <th>Sporcu</th>
+                                            <th>Aylık Ücret</th>
+                                            <th>Son Ödeme</th>
+                                            <th>Durum</th>
+                                            <th>Kalan Borç</th>
+                                            <th class="actions-col">İşlemler</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="aidatTableBody">
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <!-- Card View -->
+                            <div class="aidat-card-wrapper" id="aidatCardView" style="display: none;">
+                                <div class="aidat-cards-grid" id="aidatCardsGrid">
+                                    <!-- Kartlar buraya JavaScript ile eklenecek -->
+                                </div>
+                            </div>
+                                
+                                <div id="aidatEmptyState" class="aidat-empty">
+                                    <i class="fa-solid fa-wallet"></i>
+                                    <h3>Henüz aidat kaydı bulunmuyor</h3>
+                                    <p>Aidat takibi için önce sporcu kaydı yapmalısınız.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Takvim Görünümü (ALTA) -->
+                    <div class="card" id="aidatCalendarCard" style="margin-top: 0.75rem;">
+                        <div class="card-header" style="padding: 0.5rem 0.75rem;">
+                            <h1 style="font-size: 0.875rem; margin: 0; font-weight: 600;"><i class="fa-solid fa-calendar-days"></i> Ödeme Takvimi</h1>
+                            <div style="display: flex; gap: 0.25rem; align-items: center; flex-wrap: wrap;">
+                                <button class="btn btn-small" id="calendarPrevMonth" title="Önceki Ay" style="padding: 0.25rem 0.375rem; font-size: 0.6875rem; min-width: auto;">
+                                    <i class="fa-solid fa-chevron-left"></i>
+                                </button>
+                                <select id="calendarMonth" style="padding: 0.25rem 0.375rem; font-size: 0.6875rem; border-radius: var(--radius); background: var(--input-bg); color: var(--dark); border: 1px solid var(--border);">
+                                </select>
+                                <select id="calendarYear" style="padding: 0.25rem 0.375rem; font-size: 0.6875rem; border-radius: var(--radius); background: var(--input-bg); color: var(--dark); border: 1px solid var(--border);">
+                                </select>
+                                <button class="btn btn-small" id="calendarNextMonth" title="Sonraki Ay" style="padding: 0.25rem 0.375rem; font-size: 0.6875rem; min-width: auto;">
+                                    <i class="fa-solid fa-chevron-right"></i>
+                                </button>
+                                <button class="btn btn-small" id="calendarToday" title="Bugüne Git" style="padding: 0.25rem 0.375rem; font-size: 0.6875rem; min-width: auto;">
+                                    <i class="fa-solid fa-calendar-day"></i> Bugün
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Günlük Takvim Görünümü -->
+                        <div class="calendar-container" id="aidatCalendar">
+                            <!-- Takvim buraya JavaScript ile eklenecek -->
+                        </div>
+                        <div class="calendar-legend">
+                            <div class="calendar-legend-item">
+                                <div class="calendar-legend-indicator calendar-legend-paid"></div>
+                                <span class="calendar-legend-text">Tam Ödendi</span>
+                            </div>
+                            <div class="calendar-legend-item">
+                                <div class="calendar-legend-indicator calendar-legend-partial"></div>
+                                <span class="calendar-legend-text">Kısmi Ödeme</span>
+                            </div>
+                            <div class="calendar-legend-item">
+                                <div class="calendar-legend-indicator calendar-legend-debt"></div>
+                                <span class="calendar-legend-text">Borçlu</span>
+                            </div>
+                            <div class="calendar-legend-item">
+                                <div class="calendar-legend-indicator calendar-legend-none"></div>
+                                <span class="calendar-legend-text">Ödeme Yok</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Yoklama View -->
+                <div id="yoklama" class="view">
+                    <div class="card">
+                        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                            <h1><i class="fa-solid fa-clipboard-check"></i> Yoklama</h1>
+                        </div>
+                        
+                        <div class="yoklama-header">
+                            <div class="yoklama-filters">
+                                <div class="filter-item">
+                                    <label for="yoklamaGrup">Grup:</label>
+                                    <select id="yoklamaGrup">
+                                        <option value="all">Tüm Gruplar</option>
+                                    </select>
+                                </div>
+                                <div class="filter-item">
+                                    <label for="yoklamaTarih">Tarih:</label>
+                                    <input type="date" id="yoklamaTarih">
+                                </div>
+                            </div>
+                            
+                            <div class="yoklama-controls">
+                                <style>
+                                    .mobil-buton-grubu {
+                                        display: flex;
+                                        flex-wrap: wrap;
+                                        gap: 10px;
+                                        width: 100%;
+                                    }
+                            
+                                    /* 1. KURAL: TELEFONLAR İÇİN (Varsayılan) */
+                                    .mobil-buton-grubu .btn {
+                                        flex: 1 1 calc(50% - 10px); /* Ekranın yarısını kapla (2'li dizil) */
+                                        display: flex;
+                                        align-items: center;
+                                        justify-content: center;
+                                        gap: 5px;
+                                        padding: 10px 5px;
+                                    }
+                            
+                                    /* 2. KURAL: BİLGİSAYARLAR İÇİN (Ekran genişse) */
+                                    @media (min-width: 768px) {
+                                        .mobil-buton-grubu .btn {
+                                            flex: 0 1 auto; /* Genişleme, sadece gerektiği kadar yer kapla */
+                                            width: auto;    /* Genişliği serbest bırak */
+                                            padding: 8px 15px;
+                                        }
+                                    }
+                                </style>
+                            
+                                <div class="mobil-buton-grubu">
+                                    <button class="btn btn-primary" id="qrTaraBtn">
+                                        <i class="fa-solid fa-qrcode"></i> 
+                                        <span>QR Tara</span>
+                                    </button>
+                            
+                                    <button class="btn btn-secondary" id="qrYazdirBtn">
+                                        <i class="fa-solid fa-print"></i> 
+                                        <span>QR Yazdır</span>
+                                    </button>
+                            
+                                    <button class="btn btn-success" id="tumunuVarBtn">
+                                        <i class="fa-solid fa-check"></i> 
+                                        <span>Tümü Var</span>
+                                    </button>
+                            
+                                    <button class="btn btn-danger" id="tumunuYokBtn">
+                                        <i class="fa-solid fa-xmark"></i> 
+                                        <span>Tümü Yok</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="yoklama-stats">
+                            <div class="yoklama-stat">
+                                <div class="stat-label">Toplam Sporcu</div>
+                                <div id="toplamSporcuSayisi" class="stat-value">0</div>
+                            </div>
+                            <div class="yoklama-stat">
+                                <div class="stat-label">Var Olan</div>
+                                <div id="varOlanSayisi" class="stat-value success">0</div>
+                            </div>
+                            <div class="yoklama-stat">
+                                <div class="stat-label">Devamsız</div>
+                                <div id="devamsizSayisi" class="stat-value danger">0</div>
+                            </div>
+                            <div class="yoklama-stat">
+                                <div class="stat-label">Devam Yüzdesi</div>
+                                <div id="devamYuzdesi" class="stat-value">%0</div>
+                            </div>
+                        </div>
+                        
+                        <div class="yoklama-list" id="yoklamaListesi">
+                        </div>
+                        
+                        <div id="yoklamaEmptyState" class="empty-state">
+                            <i class="fa-solid fa-clipboard"></i>
+                            <h3>Henüz sporcu bulunmuyor</h3>
+                            <p>Yoklama almak için önce sporcu kaydı yapmalısınız.</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Gider Yönetimi View -->
+                <div id="giderler" class="view">
+                    <div class="card">
+                        <div class="card-header">
+                            <h1><i class="fa-solid fa-money-bill-wave"></i> Gider Yönetimi</h1>
+                        </div>
+                        
+                        <div class="form-container">
+                            <h3 class="form-title">Yeni Gider Ekle</h3>
+                            <form id="giderEkleForm">
+                                <div class="form-grid">
+                                    <div class="form-group">
+                                        <label for="giderTur">Gider Türü *</label>
+                                        <select id="giderTur" required>
+                                            <option value="">Seçiniz</option>
+                                            <option value="Maaş">Maaş</option>
+                                            <option value="Malzeme">Malzeme</option>
+                                            <option value="Fatura">Fatura</option>
+                                            <option value="Kira">Kira</option>
+                                            <option value="Bakım">Bakım</option>
+                                            <option value="Ulaşım">Ulaşım</option>
+                                            <option value="Diğer">Diğer</option>
+                                        </select>
+                                        <small class="error-text" id="giderTurError"></small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="giderTutar">Tutar (TL) *</label>
+                                        <input type="text" id="giderTutar" required placeholder="Örn: 5.000">
+                                        <small class="error-text" id="giderTutarError"></small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="giderOdemeYontemi">Ödeme Kaynağı</label>
+                                        <select id="giderOdemeYontemi" required>
+                                            <option value="Nakit Kasa">Nakit Kasa</option>
+                                            <option value="Banka Hesabı">Banka Hesabı</option>
+                                        </select>
+                                        <small class="error-text" id="giderOdemeYontemiError"></small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="giderTarih">Tarih *</label>
+                                        <input type="date" id="giderTarih" required>
+                                        <small class="error-text" id="giderTarihError"></small>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="giderAciklama">Açıklama</label>
+                                    <textarea id="giderAciklama" rows="3" placeholder="Gider detayını yazın..."></textarea>
+                                    <small class="error-text" id="giderAciklamaError"></small>
+                                </div>
+                                <button type="submit" class="btn btn-success">
+                                    <i class="fa-solid fa-plus"></i> Gider Ekle
+                                </button>
+                            </form>
+                        </div>
+
+                        <div class="table-container" style="margin-top: 2rem;">
+                            <h3 class="form-title">Gider Listesi</h3>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Tarih</th>
+                                        <th>Tür</th>
+                                        <th>Açıklama</th>
+                                        <th>Tutar</th>
+                                        <th>İşlemler</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="giderTableBody">
+                                </tbody>
+                            </table>
+                            <div id="giderEmptyState" class="empty-state" style="display: none;">
+                                <i class="fa-solid fa-receipt"></i>
+                                <h3>Henüz gider kaydı bulunmuyor</h3>
+                                <p>İlk gider kaydını eklemek için yukarıdaki formu kullanın.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Antrenörler View -->
+                <div id="antrenorler" class="view">
+                    <div class="card">
+                        <div class="card-header">
+                            <h1><i class="fa-solid fa-user-tie"></i> Antrenör Yönetimi</h1>
+                        </div>
+                        
+                        <div class="form-container">
+                            <h3 class="form-title">Yeni Antrenör Ekle</h3>
+                            <form id="antrenorEkleForm">
+                                <input type="hidden" id="antrenorId">
+                                <div class="form-grid">
+                                    <div class="form-group">
+                                        <label for="antrenorAd">Ad Soyad *</label>
+                                        <input type="text" id="antrenorAd" required>
+                                        <small class="error-text" id="antrenorAdError"></small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="antrenorAd">Ad Soyad *</label>
+                                        <input type="text" id="antrenorAd" required>
+                                        <small class="error-text" id="antrenorAdError"></small>
+                                    </div>
+                                    
+                                    <div class="form-group">
+                                        <label for="antrenorTC">TC Kimlik No</label>
+                                        <input type="text" id="antrenorTC" class="form-control" placeholder="11 haneli TC No" maxlength="11">
+                                        <small class="error-text" id="antrenorTCError"></small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="antrenorTelefon">Telefon *</label>
+                                        <input type="tel" id="antrenorTelefon" required placeholder="5XX XXX XX XX">
+                                        <small class="error-text" id="antrenorTelefonError"></small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="antrenorEmail">E-posta</label>
+                                        <input type="email" id="antrenorEmail" placeholder="ornek@email.com">
+                                        <small class="error-text" id="antrenorEmailError"></small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="antrenorBrans">Branş *</label>
+                                        <select id="antrenorBrans" required>
+                                            <option value="">Seçiniz</option>
+                                            <option value="Futbol">Futbol</option>
+                                            <option value="Basketbol">Basketbol</option>
+                                            <option value="Voleybol">Voleybol</option>
+                                            <option value="Yüzme">Yüzme</option>
+                                            <option value="Tenis">Tenis</option>
+                                            <option value="Güreş">Güreş</option>
+                                            <option value="Atletizm">Atletizm</option>
+                                        </select>
+                                        <small class="error-text" id="antrenorBransError"></small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="antrenorMaas">Maaş (TL) *</label>
+                                        <input type="text" id="antrenorMaas" required placeholder="Örn: 15.000">
+                                        <small class="error-text" id="antrenorMaasError"></small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="antrenorBaslamaTarihi">Başlama Tarihi</label>
+                                        <input type="date" id="antrenorBaslamaTarihi">
+                                        <small class="error-text" id="antrenorBaslamaTarihiError"></small>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="antrenorNotlar">Notlar</label>
+                                    <textarea id="antrenorNotlar" rows="2" placeholder="Ek bilgiler..."></textarea>
+                                </div>
+                                <div class="form-actions">
+                                    <button type="submit" class="btn btn-success" id="antrenorKaydetBtn">
+                                        <i class="fa-solid fa-plus"></i> Antrenör Ekle
+                                    </button>
+                                    <button type="button" class="btn" id="antrenorTemizleBtn">
+                                        <i class="fa-solid fa-eraser"></i> Temizle
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div class="table-container" style="margin-top: 2rem;">
+                            <h3 class="form-title">Antrenör Listesi</h3>
+                            
+                            <div class="antrenor-ozet" id="antrenorOzet">
+                                <div class="ozet-item">
+                                    <span class="ozet-label">Toplam Antrenör</span>
+                                    <span class="ozet-value" id="toplamAntrenor">0</span>
+                                </div>
+                                <div class="ozet-item">
+                                    <span class="ozet-label">Toplam Maaş Gideri</span>
+                                    <span class="ozet-value financial-negative" id="toplamMaas">0 TL</span>
+                                </div>
+                            </div>
+                            
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Ad Soyad</th>
+                                        <th>Branş</th>
+                                        <th>Telefon</th>
+                                        <th>Maaş</th>
+                                        <th>Başlama Tarihi</th>
+                                        <th>Durum</th>
+                                        <th>İşlemler</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="antrenorTableBody">
+                                </tbody>
+                            </table>
+                            <div id="antrenorEmptyState" class="empty-state" style="display: none;">
+                                <i class="fa-solid fa-user-tie"></i>
+                                <h3>Henüz antrenör kaydı bulunmuyor</h3>
+                                <p>İlk antrenör kaydını eklemek için yukarıdaki formu kullanın.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Raporlar View -->
+                <div id="raporlar" class="view">
+                    <div class="card">
+                        <div class="card-header">
+                            <h1><i class="fa-solid fa-file-contract"></i> Raporlar ve Analizler</h1>
+                        </div>
+                        
+                        <div class="rapor-filtreler">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label>Rapor Türü</label>
+                                    <select id="raporTuru">
+                                        <option value="genel" selected>Genel Özet</option>
+                                        <option value="aidat">Aidat Raporu</option>
+                                        <option value="devam">Devam Raporu</option>
+                                        <option value="sporcu">Sporcu Analizi</option>
+                                        <option value="finans">Finansal Rapor</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Dönem</label>
+                                    <select id="raporDonemi">
+                                        <option value="buay" selected>Bu Ay</option>
+                                        <option value="gecenay">Geçen Ay</option>
+                                        <option value="buYil">Bu Yıl</option>
+                                        <option value="tumZaman">Tüm Zamanlar</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="raporIcerik">
+                        </div>
+
+                        <div class="export-buttons">
+                            <button class="btn btn-success" id="pdfIndir">
+                                <i class="fa-solid fa-file-pdf"></i> PDF İndir
+                            </button>
+                            <button class="btn" id="excelIndir">
+                                <i class="fa-solid fa-file-excel"></i> Excel İndir
+                            </button>
+                            <button class="btn btn-warning" id="yazdir">
+                                <i class="fa-solid fa-print"></i> Yazdır
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Kullanıcı Yönetimi View -->
+                <div id="kullanici-yonetimi" class="view">
+                    <div class="card">
+                        <div class="card-header">
+                            <h1><i class="fa-solid fa-users-gear"></i> Kullanıcı Yönetimi</h1>
+                        </div>
+                        
+                            <div class="kullanici-yonetimi-content">
+                                <!-- Yeni Kullanıcı Formu -->
+                                <div class="kullanici-form-card">
+                                    <h4 class="form-title">Yeni Kullanıcı Ekle</h4>
+                                    <form id="kullaniciEkleForm" class="form-container">
+                                        <div class="form-grid">
+                                            <div class="form-group">
+                                                <label for="yeniKullaniciAdi">Kullanıcı Adı *</label>
+                                                <input type="text" id="yeniKullaniciAdi" required minlength="3" placeholder="Kullanıcı adı" autocomplete="username">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="yeniSifre">Şifre *</label>
+                                                <input type="password" id="yeniSifre" required minlength="4" placeholder="En az 4 karakter" autocomplete="new-password">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="yeniSifreTekrar">Şifre Tekrar *</label>
+                                                <input type="password" id="yeniSifreTekrar" required minlength="4" placeholder="Şifreyi tekrar girin" autocomplete="new-password">
+                                                <small class="form-error" id="sifreUyusmazlik" style="display: none; color: var(--danger); margin-top: 0.25rem;">
+                                                    <i class="fa-solid fa-exclamation-circle"></i> Şifreler eşleşmiyor!
+                                                </small>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="yeniAdSoyad">Ad Soyad</label>
+                                                <input type="text" id="yeniAdSoyad" placeholder="Ad Soyad">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="yeniRol">Rol *</label>
+                                                <select id="yeniRol" required>
+                                                    <option value="">Seçiniz</option>
+                                                    <option value="Yönetici">Yönetici (Tam Erişim)</option>
+                                                    <option value="Antrenör">Antrenör (Yoklama, Sporcu Listesi)</option>
+                                                    <option value="Muhasebe">Muhasebe (Aidat, Gider, Raporlar)</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="yeniEmail">E-posta</label>
+                                                <input type="email" id="yeniEmail" placeholder="ornek@email.com">
+                                            </div>
+                                        </div>
+                                        <div class="form-actions">
+                                            <button type="submit" class="btn btn-success">
+                                                <i class="fa-solid fa-user-plus"></i> Kullanıcı Ekle
+                                            </button>
+                                            <button type="button" class="btn" id="kullaniciFormTemizle">
+                                                <i class="fa-solid fa-eraser"></i> Temizle
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                                
+                                <!-- Kullanıcı Listesi -->
+                                <div class="kullanici-liste-card">
+                                    <h4 class="form-title">Mevcut Kullanıcılar</h4>
+                                    <div class="table-container">
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th>Kullanıcı Adı</th>
+                                                    <th>Ad Soyad</th>
+                                                    <th>Rol</th>
+                                                    <th>E-posta</th>
+                                                    <th>Durum</th>
+                                                    <th>İşlemler</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="kullaniciTableBody">
+                                            </tbody>
+                                        </table>
+                                        <div id="kullaniciEmptyState" class="empty-state" style="display: none;">
+                                            <i class="fa-solid fa-users"></i>
+                                            <h3>Henüz kullanıcı bulunmuyor</h3>
+                                            <p>Yukarıdaki formdan yeni kullanıcı ekleyin.</p>
+                                    </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                </div>
+
+                <!-- Ayarlar View -->
+                <div id="ayarlar" class="view">
+                    <div class="card">
+                        <div class="card-header">
+                            <h1><i class="fa-solid fa-cog"></i> Sistem Ayarları</h1>
+                        </div>
+                        
+                        <!-- Hızlı İşlemler Butonları -->
+                        <div class="settings-quick-actions">
+                            <button class="btn btn-success" id="yedekleBtn">
+                                <i class="fa-solid fa-download"></i> Veriyi Yedekle
+                            </button>
+                            <button class="btn" id="geriYukleBtn">
+                                <i class="fa-solid fa-upload"></i> Yedek Geri Yükle
+                            </button>
+                            <input type="file" id="yedekDosya" accept=".json" style="display: none;">
+                            <button class="btn btn-danger" id="sistemiSifirlaBtn">
+                                <i class="fa-solid fa-trash"></i> Sistemi Sıfırla
+                            </button>
+                        </div>
+                        
+                        <!-- Ana İçerik Grid (Yan Yana) -->
+                        <div class="settings-main-grid">
+                            <!-- Sol: Sistem İstatistikleri -->
+                            <div class="settings-main-card">
+                                <div class="settings-main-card-header">
+                                    <h3 class="settings-main-card-title">
+                                        <i class="fa-solid fa-chart-simple"></i>
+                                        Sistem İstatistikleri
+                                    </h3>
+                                </div>
+                                <div class="settings-stats-grid">
+                                    <div class="settings-stat-item">
+                                        <div class="settings-stat-icon">
+                                            <i class="fa-solid fa-users"></i>
+                                        </div>
+                                        <div class="settings-stat-content">
+                                            <div class="settings-stat-label">Toplam Sporcu</div>
+                                            <div class="settings-stat-value" id="istatSporcu">0</div>
+                                        </div>
+                                    </div>
+                                    <div class="settings-stat-item">
+                                        <div class="settings-stat-icon">
+                                            <i class="fa-solid fa-wallet"></i>
+                                        </div>
+                                        <div class="settings-stat-content">
+                                            <div class="settings-stat-label">Ödeme Kaydı</div>
+                                            <div class="settings-stat-value" id="istatOdeme">0</div>
+                                        </div>
+                                    </div>
+                                    <div class="settings-stat-item">
+                                        <div class="settings-stat-icon">
+                                            <i class="fa-solid fa-clipboard-check"></i>
+                                        </div>
+                                        <div class="settings-stat-content">
+                                            <div class="settings-stat-label">Yoklama Kaydı</div>
+                                            <div class="settings-stat-value" id="istatYoklama">0</div>
+                                        </div>
+                                    </div>
+                                    <div class="settings-stat-item">
+                                        <div class="settings-stat-icon">
+                                            <i class="fa-solid fa-receipt"></i>
+                                        </div>
+                                        <div class="settings-stat-content">
+                                            <div class="settings-stat-label">Gider Kaydı</div>
+                                            <div class="settings-stat-value" id="istatGider">0</div>
+                                        </div>
+                                    </div>
+                                    <div class="settings-stat-item full-width">
+                                        <div class="settings-stat-icon">
+                                            <i class="fa-solid fa-database"></i>
+                                        </div>
+                                        <div class="settings-stat-content">
+                                            <div class="settings-stat-label">Depolama Kullanımı</div>
+                                            <div class="settings-stat-value" id="istatDepolama">0 KB</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Sağ: Hatırlatma Ayarları -->
+                            <div class="settings-main-card">
+                                <div class="settings-main-card-header">
+                                    <h3 class="settings-main-card-title">
+                                        <i class="fa-solid fa-bell"></i>
+                                        Hatırlatma Ayarları
+                                    </h3>
+                                </div>
+                                <div class="notification-settings" id="notificationSettings">
+                                    <!-- JavaScript ile doldurulacak -->
+                                </div>
+                            </div>
+                            
+                            <!-- Başlangıç Bakiyesi -->
+                            <div class="settings-main-card">
+                                <div class="settings-main-card-header">
+                                    <h3 class="settings-main-card-title">
+                                        <i class="fa-solid fa-wallet"></i>
+                                        Başlangıç Bakiyesi (İlk Kurulum)
+                                    </h3>
+                                    <p class="settings-main-card-subtitle" style="margin-top: 0.5rem; color: var(--muted); font-size: 0.875rem;">
+                                        Sistem kurulumunda mevcut nakit ve banka bakiyenizi girin. Bu, sistemin başlangıç durumunu belirler.
+                                    </p>
+                                </div>
+                                <form id="baslangicBakiyesiForm" class="form" style="padding: 1rem;">
+                                    <div class="form-group">
+                                        <label for="baslangicNakit">
+                                            <i class="fa-solid fa-money-bill-wave"></i> Başlangıç Nakit (TL)
+                                        </label>
+                                        <input type="text" id="baslangicNakit" placeholder="0,00" data-format="money">
+                                        <small style="color: var(--muted); font-size: 0.875rem;">
+                                            Sistem kurulumunda kasada bulunan nakit para miktarı
+                                        </small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="baslangicBanka">
+                                            <i class="fa-solid fa-university"></i> Başlangıç Banka Bakiyesi (TL)
+                                        </label>
+                                        <input type="text" id="baslangicBanka" placeholder="0,00" data-format="money">
+                                        <small style="color: var(--muted); font-size: 0.875rem;">
+                                            Sistem kurulumunda banka hesabında bulunan para miktarı
+                                        </small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="baslangicBakiyeTarih">
+                                            <i class="fa-solid fa-calendar"></i> Bakiyenin Geçerli Olduğu Tarih
+                                        </label>
+                                        <input type="date" id="baslangicBakiyeTarih" required>
+                                        <small style="color: var(--muted); font-size: 0.875rem;">
+                                            Bu bakiyenin geçerli olduğu tarih (genellikle sistem kurulum tarihi)
+                                        </small>
+                                    </div>
+                                    <button type="submit" id="baslangicBakiyeKaydet" class="btn btn-success btn-block">
+                                        <i class="fa-solid fa-save"></i> Başlangıç Bakiyesini Kaydet
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                        
+                        <!-- Hakkında (Alt) -->
+                        <div class="settings-about">
+                            <div class="settings-about-content">
+                                <i class="fa-solid fa-info-circle"></i>
+                                <div>
+                                    <strong>SOY-BIS</strong> - Spor Okulları Yönetim Bilgi Sistemi v2.0.0 (Modüler)
+                                    <span style="color: var(--muted); margin-left: var(--spacing-sm);">© 2024</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Malzeme Ekle Modal -->
+    <div id="malzemeEkleModal" class="modal" style="display: none !important;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fa-solid fa-box"></i> Malzeme Ekle</h2>
+                <button class="modal-close" id="malzemeModalKapat">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="malzemeEkleForm" novalidate>
+                    <div class="form-group">
+                        <label for="malzemeSporcuSelect">Sporcu *</label>
+                        <select id="malzemeSporcuSelect" class="form-control" required autocomplete="off" aria-label="Sporcu seçimi">
+                            <option value="">Sporcu Seçin</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="malzemeAd">Malzeme Adı *</label>
+                        <input type="text" id="malzemeAd" name="malzemeAd" placeholder="Örn: Forma, Eşofman, Yağmurluk" required autocomplete="off" aria-label="Malzeme adı">
+                    </div>
+                    <div class="form-group">
+                        <label for="malzemeTutar">Tutar (TL) *</label>
+                        <input type="text" id="malzemeTutar" name="malzemeTutar" placeholder="Örn: 1.500" required autocomplete="off" aria-label="Malzeme tutarı">
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn" id="malzemeIptal">İptal</button>
+                        <button type="button" class="btn btn-success" id="malzemeEkleKaydet">Ekle</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ödeme Modal -->
+    <div id="odemeModal" class="modal" style="display: none !important;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fa-solid fa-credit-card"></i> Ödeme Kaydı</h2>
+                <button class="modal-close" id="odemeModalKapat">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Sporcu Seç</label>
+                    <select id="odemeSporcuSelect"></select>
+                </div>
+                <div class="form-group">
+                    <label>İşlem Türü</label>
+                    <select id="odemeIslemTuru" required>
+                        <option value="Tahsilat">Tahsilat (Ödeme Al)</option>
+                        <option value="Malzeme">Malzeme Borcu Ekle (Forma, Eşofman, vb.)</option>
+                    </select>
+                </div>
+                <div class="form-group" id="odemeAciklamaGroup" style="display: none;">
+                    <label>Malzeme Açıklaması</label>
+                    <input type="text" id="odemeAciklama" placeholder="Örn: Forma Ücreti, Eşofman Ücreti">
+                </div>
+                <div class="form-group" id="odemeNotGroup">
+                    <label>Açıklama/Not (Opsiyonel)</label>
+                    <textarea id="odemeNot" rows="2" placeholder="Örn: Peşin ödeme, Ek ödeme, vb."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Tutar (TL)</label>
+                    <input type="text" id="odemeTutar" placeholder="Ödeme tutarı">
+                </div>
+                <div class="form-group">
+                    <label>Ödeme Yöntemi</label>
+                    <select id="odemeYontemi" required>
+                        <option value="Nakit">Nakit</option>
+                        <option value="Banka / Havale">Banka / Havale</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Ödeme Yapılan Dönem</label>
+                    <div class="donem-grid">
+                        <select id="odemeDonemAy"></select>
+                        <select id="odemeDonemYil"></select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Ödeme Tarihi</label>
+                    <input type="date" id="odemeTarih">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-danger" id="odemeIptal">İptal</button>
+                <button class="btn btn-success" id="odemeKaydet">Kaydet</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ödeme Geçmişi Modal -->
+    <div id="odemeGecmisiModal" class="modal" style="display: none !important;">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h2><i class="fa-solid fa-history"></i> Ödeme Geçmişi</h2>
+                <button class="modal-close" id="gecmisModalKapat">&times;</button>
+            </div>
+            <div class="modal-body" id="odemeGecmisiIcerik">
+            </div>
+            <div class="modal-footer">
+                <button class="btn" id="gecmisKapat">Kapat</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bildirim Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Sporcu Detay Raporu View -->
+    <div id="sporcu-detay-raporu" class="view" style="display: none;">
+        <div class="sporcu-rapor-container">
+            <!-- Header -->
+            <div class="rapor-header">
+                <h1 class="rapor-title" id="raporTitle">Öğrenci Dosyası</h1>
+                <button class="btn btn-icon btn-back" id="raporGeriBtn" title="Geri">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
+                <button class="btn btn-icon btn-print" id="raporYazdirBtn" title="PDF İndir / Yazdır">
+                    <i class="fa-solid fa-file-pdf"></i>
+                </button>
+            </div>
+
+            <!-- Content -->
+            <div class="rapor-content" id="raporContent">
+                <!-- İçerik dinamik olarak doldurulacak -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Vite Entry Point -->
+    <!-- Old JS modules will be migrated to TypeScript and imported via main.ts -->
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
+

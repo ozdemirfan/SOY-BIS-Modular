@@ -1,0 +1,57 @@
+/**
+ * Yoklama QR Modal Styles
+ * QR modal için gerekli stiller (kullanılan)
+ */
+
+/* ========== QR MODAL ========== */
+#yoklamaQRModal .modal-content {
+  max-width: 500px;
+  width: 90%;
+}
+
+@media (max-width: 480px) {
+  #yoklamaQRModal .modal-content {
+    width: 95%;
+    max-width: 100%;
+  }
+}
+
+#qrManualInput {
+  width: 100%;
+  padding: 12px;
+  font-size: 14px;
+  border: 2px solid #ccc;
+  border-radius: 8px;
+  margin: 10px 0;
+}
+
+#qrManualInput:focus {
+  outline: none;
+  border-color: #3182ce;
+}
+
+#qrResult {
+  margin-top: 15px;
+  padding: 15px;
+  border-radius: 8px;
+  min-height: 60px;
+  transition: all 0.3s;
+}
+
+@keyframes qrSuccess {
+  0% {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+#qrResult.success {
+  animation: qrSuccess 0.5s ease;
+}
