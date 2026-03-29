@@ -1281,7 +1281,7 @@ function loginEventleri(): void {
 
     if (!kullanici) {
       if (errorDiv && errorText) {
-        errorText.textContent = 'Kullanıcı adı veya şifre hatalı!';
+        errorText.textContent = Auth.sonGirisUyariMetni() || 'Kullanıcı adı veya şifre hatalı.';
         (errorDiv as HTMLElement).style.display = 'flex';
       }
       // Şifre alanını temizle

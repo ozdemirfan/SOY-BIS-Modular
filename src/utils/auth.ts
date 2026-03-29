@@ -14,11 +14,20 @@ const CURRENT_USER_KEY = 'soybis_aktifKullanici';
 // Hostingte env gömülmese bile shared DB modunun zorunlu çalışması için true.
 const API_ENABLED = true;
 
+/** Son başarısız giriş denemesi için kullanıcıya gösterilecek mesaj (başarılı girişte sıfırlanır). */
+let sonGirisUyari: string | null = null;
+
+export function sonGirisUyariMetni(): string | null {
+  return sonGirisUyari;
+}
+
 /**
  * Giriş yap
  * GÜVENLİK: Oturum sadece sessionStorage'da tutulur, localStorage kullanılmaz
  */
 export async function girisYap(kullaniciAdi: string, sifre: string): Promise<Session | null> {
+  sonGirisUyari = null;
+
   if (!kullaniciAdi || !sifre) {
     return null;
   }
@@ -32,7 +41,10 @@ export async function girisYap(kullaniciAdi: string, sifre: string): Promise<Ses
       });
 
       const user = (resp as any)?.user ?? resp;
-      if (!user?.id || !user?.kullaniciAdi || !user?.rol) return null;
+      if (!user?.id || !user?.kullaniciAdi || !user?.rol) {
+        sonGirisUyari = 'Giriş yanıtı geçersiz. Lütfen tekrar deneyin.';
+        return null;
+      }
 
       const oturumBilgisi: Session = {
         id: Number(user.id),
@@ -52,9 +64,12 @@ export async function girisYap(kullaniciAdi: string, sifre: string): Promise<Ses
     // Local mode: mevcut davranış (localStorage üzerinden)
     // (Not: bu branch sadece paylaşımsız kullanım içindir.)
     const kullanici = await kullaniciSifreDogrula(kullaniciAdi, sifre);
-    if (!kullanici) return null;
+    if (!kullanici) {
+      sonGirisUyari = 'Kullanıcı adı veya şifre hatalı.';
+      return null;
+    }
 
-    if (!kullanici.aktif) throw new Error('Kullanıcı hesabı pasif durumda!');
+    if (!kullanici.aktif) throw new Error('Kullanıcı pasif');
 
     const oturumBilgisi: Session = {
       id: kullanici.id,
@@ -69,6 +84,28 @@ export async function girisYap(kullaniciAdi: string, sifre: string): Promise<Ses
     return oturumBilgisi;
   } catch (error) {
     console.error('Giriş hatası:', error);
+    const msg = error instanceof Error ? error.message : String(error);
+
+    if (
+      msg.includes('Sunucuya bağlanılamadı') ||
+      msg.includes('yanıt okunamadı') ||
+      msg.includes('API adresini')
+    ) {
+      sonGirisUyari =
+        'Sunucuya ulaşılamıyor. Ağ bağlantınızı veya API adresini (VITE_SOYBIS_API_BASE) kontrol edin.';
+    } else if (msg.includes('pasif')) {
+      sonGirisUyari = 'Bu hesap pasif. Yöneticinize başvurun.';
+    } else if (
+      msg.includes('Kullanıcı adı') ||
+      msg.includes('şifre hatalı') ||
+      msg === 'Unauthorized'
+    ) {
+      sonGirisUyari = 'Kullanıcı adı veya şifre hatalı.';
+    } else if (msg.length > 0) {
+      sonGirisUyari = msg;
+    } else {
+      sonGirisUyari = 'Giriş yapılamadı. Lütfen tekrar deneyin.';
+    }
     return null;
   }
 }
@@ -296,6 +333,7 @@ export function kontrol(): boolean {
 if (typeof window !== 'undefined') {
   (window as unknown as { Auth: Record<string, unknown> }).Auth = {
     girisYap,
+    sonGirisUyariMetni,
     cikisYap,
     oturumKontrol,
     aktifKullanici,

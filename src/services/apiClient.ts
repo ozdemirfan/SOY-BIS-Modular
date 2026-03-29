@@ -90,6 +90,16 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     );
   }
 
+  let payload: unknown;
+  try {
+    payload = await parseJsonOrText(res);
+  } catch (error) {
+    logTransportFailure(path, error);
+    throw new Error(
+      `Sunucu yanıtı okunamadı (${res.status}). ${res.statusText || 'Bilinmeyen durum'}`
+    );
+  }
+
   if (res.status === 401 || res.status === 403) {
     // Kullanıcı login değilse (sessionStorage yoksa) gereksiz reload döngüsünü engelle.
     const hasClientSession =
@@ -99,17 +109,13 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     if (hasClientSession) {
       clearSessionAndReload();
     }
-    throw new Error('Unauthorized');
-  }
-
-  let payload: unknown;
-  try {
-    payload = await parseJsonOrText(res);
-  } catch (error) {
-    logTransportFailure(path, error);
-    throw new Error(
-      `Sunucu yanıtı okunamadı (${res.status}). ${res.statusText || 'Bilinmeyen durum'}`
-    );
+    const apiMsg =
+      typeof payload === 'object' && payload !== null
+        ? (payload as ApiErrorResponse).error || (payload as ApiErrorResponse).detail
+        : typeof payload === 'string'
+          ? payload
+          : '';
+    throw new Error((typeof apiMsg === 'string' ? apiMsg : '').trim() || 'Unauthorized');
   }
 
   if (!res.ok) {

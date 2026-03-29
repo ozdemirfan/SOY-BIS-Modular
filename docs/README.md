@@ -84,6 +84,15 @@ SOY-BIS-Modular/
 - Auto-formatting
 - Strict rules
 
+### Ortam değişkenleri (Vite + PHP API)
+
+| Amaç | Nerede | Örnek |
+|------|--------|--------|
+| Frontend’in çağırdığı API kök adresi | `.env.local` (kopya: `.env.example`) | `VITE_SOYBIS_API_BASE=http://localhost/soybis/api` |
+| PHP API’de hata ayıklama (JSON 500 yanıtına `detail` ekler) | Apache/nginx **ortam değişkeni** (Vite `.env` otomatik yüklemez) | `SOYBIS_API_DEBUG=1` |
+
+**Yedek / geri yükleme:** Uygulama içi yedek indirme ve dosyadan geri yükleme; paylaşımlı modda sunucuya da `backup/restore` isteği gider. API kapalıyken veriler yerelde güncellenir; senkron uyarısı gösterilebilir.
+
 ## 📝 Migration Notları
 
 Bu versiyon, vanilla JavaScript'ten TypeScript + Vite mimarisine geçiş yapıyor.
