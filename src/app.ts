@@ -47,6 +47,7 @@ import {
   navIndicatorGuncelle,
   type ViewNavigationContext,
 } from './app/appViewNavigation';
+import { modulleriBaslat, tumunuGuncelle } from './app/appModulesInit';
 
 export { toggleMobileMenu, openMobileMenu, closeMobileMenu };
 export { masaustuSidebarYonetimi, toggleDesktopSidebar };
@@ -132,115 +133,7 @@ function viewGoster(viewId: string, ilkBaslatma = false): void {
 }
 
 // aramaKutulariniTemizle / formInputlariniTemizle → utils/appFormCleanup
-
-// ========== MODULE INITIALIZATION ==========
-
-/**
- * Modülleri başlat
- */
-function modulleriBaslat(): void {
-  // Dashboard
-  try {
-    if (typeof window !== 'undefined' && window.Dashboard && typeof Dashboard.init === 'function') {
-      Dashboard.init();
-    }
-  } catch (e) {
-    console.warn('Dashboard init hatası:', e);
-  }
-
-  // Sporcu
-  try {
-    if (typeof window !== 'undefined' && window.Sporcu && typeof Sporcu.init === 'function') {
-      Sporcu.init();
-    }
-  } catch (e) {
-    console.warn('Sporcu init hatası:', e);
-  }
-
-  // Aidat
-  try {
-    if (typeof window !== 'undefined' && window.Aidat && typeof Aidat.init === 'function') {
-      Aidat.init();
-    }
-  } catch (e) {
-    console.warn('Aidat init hatası:', e);
-  }
-
-  // Yoklama
-  try {
-    if (typeof window !== 'undefined' && window.Yoklama && typeof Yoklama.init === 'function') {
-      Yoklama.init();
-    }
-  } catch (e) {
-    console.warn('Yoklama init hatası:', e);
-  }
-
-  // Gider
-  try {
-    if (typeof window !== 'undefined' && window.Gider && typeof Gider.init === 'function') {
-      Gider.init();
-    }
-  } catch (e) {
-    console.warn('Gider init hatası:', e);
-  }
-
-  // Antrenör
-  try {
-    if (typeof window !== 'undefined' && window.Antrenor && typeof Antrenor.init === 'function') {
-      Antrenor.init();
-    }
-  } catch (e) {
-    console.warn('Antrenor init hatası:', e);
-  }
-
-  // Rapor
-  try {
-    if (typeof window !== 'undefined' && window.Rapor && typeof Rapor.init === 'function') {
-      Rapor.init();
-    }
-  } catch (e) {
-    console.warn('Rapor init hatası:', e);
-  }
-
-  // Notification (Hatırlatma)
-  try {
-    if (
-      typeof window !== 'undefined' &&
-      window.Notification &&
-      typeof Notification.init === 'function'
-    ) {
-      Notification.init();
-    }
-  } catch (e) {
-    console.warn('Notification init hatası:', e);
-  }
-
-  // Ayarlar
-  try {
-    if (
-      typeof window !== 'undefined' &&
-      (window as any).Ayarlar &&
-      typeof (window as any).Ayarlar.init === 'function'
-    ) {
-      (window as any).Ayarlar.init();
-    }
-  } catch (e) {
-    console.warn('Ayarlar init hatası:', e);
-  }
-
-  // Kullanıcı Yönetimi
-  try {
-    if (
-      typeof window !== 'undefined' &&
-      window.KullaniciYonetimi &&
-      typeof KullaniciYonetimi.init === 'function'
-    ) {
-      KullaniciYonetimi.init();
-    }
-  } catch (e) {
-    console.warn('Kullanıcı Yönetimi init hatası:', e);
-  }
-}
+// modulleriBaslat / tumunuGuncelle → app/appModulesInit
 
 /**
  * Kullanıcı bilgilerini header'da göster
@@ -510,20 +403,6 @@ export function hatirlatmaAyarlariGoster(): void {
       </div>
     </div>
   `;
-}
-
-/**
- * Tüm modülleri güncelle
- */
-function tumunuGuncelle(): void {
-  if (typeof window !== 'undefined') {
-    if (window.Dashboard && typeof Dashboard.guncelle === 'function') Dashboard.guncelle();
-    if (window.Sporcu && typeof Sporcu.listeyiGuncelle === 'function') Sporcu.listeyiGuncelle();
-    if (window.Aidat && typeof Aidat.listeyiGuncelle === 'function') Aidat.listeyiGuncelle();
-    if (window.Yoklama && typeof Yoklama.listeyiGuncelle === 'function') Yoklama.listeyiGuncelle();
-    if (window.Gider && typeof Gider.listeyiGuncelle === 'function') Gider.listeyiGuncelle();
-    if (window.Rapor && typeof Rapor.guncelle === 'function') Rapor.guncelle();
-  }
 }
 
 /**
