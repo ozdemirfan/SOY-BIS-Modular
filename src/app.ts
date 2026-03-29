@@ -41,6 +41,7 @@ import { masaustuSidebarYonetimi, toggleDesktopSidebar } from './app/appDesktopS
 import { malzemeModalEventleriniBagla } from './app/malzemeModalBridge';
 import { klavyeKisayollari } from './app/appKeyboardShortcuts';
 import { ayarlarEventleri } from './app/appSettingsEvents';
+import { loginEventleri, type LoginFlowHooks } from './app/appLoginFlow';
 
 export { toggleMobileMenu, openMobileMenu, closeMobileMenu };
 export { masaustuSidebarYonetimi, toggleDesktopSidebar };
@@ -791,157 +792,6 @@ function modulleriBaslat(): void {
 }
 
 /**
- * Login form eventlerini bağla
- */
-function loginEventleri(): void {
-  const loginForm = Helpers.$('#loginForm');
-  if (!loginForm) {
-    console.error('Login form bulunamadı!');
-    return;
-  }
-
-  // Eski event listener'ı kaldır (eğer varsa)
-  const newLoginForm = loginForm.cloneNode(true) as HTMLFormElement;
-  if (loginForm.parentNode) {
-    loginForm.parentNode.replaceChild(newLoginForm, loginForm);
-  }
-
-  newLoginForm.addEventListener('submit', async function (e: Event) {
-    e.preventDefault();
-
-    const kullaniciAdiInput = Helpers.$('#loginKullaniciAdi') as HTMLInputElement | null;
-    const sifreInput = Helpers.$('#loginSifre') as HTMLInputElement | null;
-
-    const kullaniciAdi = kullaniciAdiInput?.value.trim() || '';
-    const sifre = sifreInput?.value || '';
-
-    const errorDiv = Helpers.$('#loginError');
-    const errorText = Helpers.$('#loginErrorText');
-
-    // Hata mesajını gizle
-    if (errorDiv) (errorDiv as HTMLElement).style.display = 'none';
-
-    if (!kullaniciAdi || !sifre) {
-      if (errorDiv && errorText) {
-        errorText.textContent = 'Lütfen kullanıcı adı ve şifre girin!';
-        (errorDiv as HTMLElement).style.display = 'flex';
-      }
-      return;
-    }
-
-    // Giriş yap
-    const kullanici = await Auth.girisYap(kullaniciAdi, sifre);
-
-    if (!kullanici) {
-      if (errorDiv && errorText) {
-        errorText.textContent = Auth.sonGirisUyariMetni() || 'Kullanıcı adı veya şifre hatalı.';
-        (errorDiv as HTMLElement).style.display = 'flex';
-      }
-      // Şifre alanını temizle
-      if (sifreInput) sifreInput.value = '';
-      return;
-    }
-
-    // Başarılı giriş - Önce splash screen'i göster
-    loginOverlayGizle();
-    splashScreenGoster();
-
-    // App container'ı gizle (splash screen gösterilirken)
-    const appContainer = Helpers.$('.app-container');
-    if (appContainer) {
-      (appContainer as HTMLElement).style.display = 'none';
-    }
-
-    kullaniciBilgileriniGoster();
-    rolBazliMenuGizle();
-
-    // Uygulamayı başlat
-    try {
-      // Eski verileri migrate et
-      if (
-        typeof window !== 'undefined' &&
-        window.Storage &&
-        typeof Storage.veriMigration === 'function'
-      ) {
-        Storage.veriMigration();
-      }
-
-      // Tarihi güncelle
-      tarihiGuncelle();
-
-      // Navigasyon eventlerini bağla
-      navigasyonEventleri();
-
-      // Modülleri başlat
-      modulleriBaslat();
-
-      // Ayarlar eventlerini bağla
-      ayarlarEventleri();
-
-      // Keyboard shortcuts'ları bağla
-      klavyeKisayollari(viewGoster);
-
-      // Hamburger menü eventlerini bağla (Mobil)
-      hamburgerMenuEventleri();
-
-      // Rol bazlı varsayılan view'a yönlendir
-      const kullaniciRolu = kullanici.rol as UserRole;
-      let varsayilanView = 'dashboard';
-      if (kullaniciRolu === 'Antrenör') {
-        varsayilanView = 'sporcu-listesi';
-      } else if (kullaniciRolu === 'Muhasebe') {
-        varsayilanView = 'dashboard';
-      } else {
-        varsayilanView = 'dashboard';
-      }
-
-      viewGoster(varsayilanView, true);
-
-      // Nav indicator pozisyonunu ayarla
-      setTimeout(() => {
-        navIndicatorGuncelle(varsayilanView);
-      }, 100);
-
-      state.yuklendi = true;
-
-      // Splash screen'i kapat ve app container'ı göster
-      splashScreenKapat();
-      setTimeout(() => {
-        const appContainer = Helpers.$('.app-container');
-        if (appContainer) {
-          (appContainer as HTMLElement).style.display = 'flex';
-
-          // App container görünür olduktan sonra sidebar yönetimini başlat
-          // DOM hazır olduğundan emin olmak için biraz bekle
-          setTimeout(() => {
-            // Tema yönetimini başlat
-            temaYonetiminiBaslat();
-
-            // Masaüstü sidebar yönetimi (varsayılan açık + tercih kaydı)
-            if (typeof window !== 'undefined' && window.innerWidth >= 769) {
-              try {
-                masaustuSidebarYonetimi();
-              } catch (e) {
-                console.warn('Masaüstü sidebar yönetimi hatası:', e);
-              }
-            }
-          }, 100);
-        }
-      }, 1800); // Splash screen animasyonu bitene kadar bekle
-    } catch (error) {
-      console.error('Uygulama başlatma hatası:', error);
-      Helpers.toast('Uygulama başlatılırken hata oluştu!', 'error');
-      // Hata durumunda da app container'ı göster
-      const appContainer = Helpers.$('.app-container');
-      if (appContainer) {
-        (appContainer as HTMLElement).style.display = 'flex';
-      }
-      splashScreenKapat();
-    }
-  });
-}
-
-/**
  * Kullanıcı bilgilerini header'da göster
  */
 function kullaniciBilgileriniGoster(): void {
@@ -1241,6 +1091,20 @@ function yuklendiMi(): boolean {
   return state.yuklendi;
 }
 
+function loginFlowHooks(): LoginFlowHooks {
+  return {
+    navigasyonEventleri,
+    modulleriBaslat,
+    viewGoster,
+    navIndicatorGuncelle,
+    kullaniciBilgileriniGoster,
+    rolBazliMenuGizle,
+    setYuklendi: v => {
+      state.yuklendi = v;
+    },
+  };
+}
+
 // ========== MAIN INITIALIZATION ==========
 
 /**
@@ -1294,7 +1158,7 @@ export async function init(): Promise<void> {
       // Giriş yapılmamış, login overlay'i göster (CSS yüklendikten sonra)
       requestAnimationFrame(() => {
         loginOverlayGoster();
-        loginEventleri();
+        loginEventleri(loginFlowHooks());
       });
       return; // Uygulamayı başlatma
     }
@@ -1330,7 +1194,7 @@ export async function init(): Promise<void> {
   } catch (error) {
     console.error('Auth kontrolü hatası:', error);
     loginOverlayGoster();
-    loginEventleri();
+    loginEventleri(loginFlowHooks());
     return;
   }
 
