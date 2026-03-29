@@ -21,6 +21,12 @@ import * as Ayarlar from './modules/ayarlar';
 import * as KullaniciYonetimi from './modules/kullanici-yonetimi';
 import * as Notification from './modules/notification';
 import { isMobile, handleResize } from './utils/responsiveLayout';
+import {
+  splashScreenGoster,
+  splashScreenKapat,
+  loginOverlayGoster,
+  loginOverlayGizle,
+} from './utils/loginSplashUi';
 
 // ========== TYPES & INTERFACES ==========
 
@@ -49,35 +55,6 @@ let resizeAbortController: AbortController | null = null;
 let themeAbortController: AbortController | null = null;
 
 // ========== HELPER FUNCTIONS ==========
-
-/**
- * Splash screen'i göster
- */
-function splashScreenGoster(): void {
-  const splash = document.getElementById('splashScreen');
-  if (splash) {
-    splash.classList.remove('hidden');
-    (splash as HTMLElement).style.display = 'flex';
-    (splash as HTMLElement).style.setProperty('display', 'flex', 'important');
-  }
-}
-
-/**
- * Splash screen'i kapat
- */
-function splashScreenKapat(): void {
-  const splash = document.getElementById('splashScreen');
-  if (splash) {
-    // Animasyonun bitmesini bekle
-    setTimeout(() => {
-      splash.classList.add('hidden');
-      // Tamamen kaldır
-      setTimeout(() => {
-        splash.remove();
-      }, 500);
-    }, 1800); // Loading bar animasyonu + biraz bekleme
-  }
-}
 
 /**
  * Tarihi güncelle
@@ -1126,58 +1103,6 @@ function ayarlarEventleri(): void {
         Auth.cikisYap();
       }
     });
-  }
-}
-
-/**
- * Login overlay'i göster
- */
-function loginOverlayGoster(): void {
-  const overlay = Helpers.$('#loginOverlay');
-  if (overlay) {
-    overlay.classList.remove('hidden');
-    (overlay as HTMLElement).style.display = 'flex';
-    (overlay as HTMLElement).style.setProperty('display', 'flex', 'important');
-
-    // Login logo'yu göster (eğer varsa)
-    const loginLogo = overlay.querySelector('.login-logo') as HTMLImageElement;
-    if (loginLogo) {
-      loginLogo.style.display = '';
-    }
-  }
-  // App container'ı gizle
-  const appContainer = Helpers.$('.app-container');
-  if (appContainer) {
-    (appContainer as HTMLElement).style.display = 'none';
-  }
-  // Splash screen'i gizle
-  const splash = Helpers.$('#splashScreen');
-  if (splash) {
-    (splash as HTMLElement).style.display = 'none';
-    splash.classList.add('hidden');
-  }
-}
-
-/**
- * Login overlay'i gizle
- */
-function loginOverlayGizle(): void {
-  const overlay = Helpers.$('#loginOverlay');
-  if (overlay) {
-    overlay.classList.add('hidden');
-    (overlay as HTMLElement).style.display = 'none';
-    (overlay as HTMLElement).style.setProperty('display', 'none', 'important');
-
-    // Login logo'yu gizle
-    const loginLogo = overlay.querySelector('.login-logo') as HTMLImageElement;
-    if (loginLogo) {
-      loginLogo.style.display = 'none';
-    }
-  }
-  // App container'ı göster
-  const appContainer = Helpers.$('.app-container');
-  if (appContainer) {
-    (appContainer as HTMLElement).style.display = 'flex';
   }
 }
 
