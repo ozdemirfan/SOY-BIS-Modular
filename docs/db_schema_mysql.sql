@@ -17,16 +17,16 @@ CREATE TABLE IF NOT EXISTS users (
   UNIQUE KEY uq_users_kullaniciAdi (kullaniciAdi)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Sporcular: id primary key + JSON/TEXT kayıt
+-- Sporcular: id primary key + JSON/TEXT kayıt (BIGINT: istemci zaman damgası ID’leri için)
 CREATE TABLE IF NOT EXISTS sporcular (
-  id INT NOT NULL,
+  id BIGINT NOT NULL,
   data LONGTEXT NOT NULL,
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS aidatlar (
-  id INT NOT NULL,
-  sporcuId INT NOT NULL,
+  id BIGINT NOT NULL,
+  sporcuId BIGINT NOT NULL,
   donemAy INT NOT NULL,
   donemYil INT NOT NULL,
   data LONGTEXT NOT NULL,
@@ -44,13 +44,13 @@ CREATE TABLE IF NOT EXISTS yoklamalar (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS giderler (
-  id INT NOT NULL,
+  id BIGINT NOT NULL,
   data LONGTEXT NOT NULL,
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS antrenorler (
-  id INT NOT NULL,
+  id BIGINT NOT NULL,
   data LONGTEXT NOT NULL,
   PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS yoklama_audit (
   id INT NOT NULL AUTO_INCREMENT,
   yoklamaTarih DATE NOT NULL,
   yoklamaGrup VARCHAR(50) NOT NULL,
-  sporcuId INT NOT NULL,
+  sporcuId BIGINT NOT NULL,
   eskiDurum VARCHAR(20) NOT NULL,
   yeniDurum VARCHAR(20) NOT NULL,
   kullaniciId INT NOT NULL,

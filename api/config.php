@@ -7,10 +7,10 @@ declare(strict_types=1);
 
 return [
   'db' => [
-    'host' => 'db.host',
-    'name' => 'u2626680_syb_db',
-    'user' => 'u2626680_user556',
-    'pass' => '3xE5t.t3dCuiQsR',
+    'host' => 'localhost',
+    'name' => 'soybis',
+    'user' => 'root',
+    'pass' => '',
     'charset' => 'utf8mb4',
   ],
   'session' => [

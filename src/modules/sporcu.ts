@@ -48,6 +48,22 @@
 
 import * as Storage from '../utils/storage';
 import * as Helpers from '../utils/helpers';
+import {
+  applyHtml2PdfAvoidSpacers,
+  buildReportDocumentMeta,
+  PDF_EXPORT_MARGIN_MM,
+  pdfExportRootWidthMm,
+  PDF_HTML2PDF_PAGE_BREAK,
+  createPdfExportLoadingOverlay,
+  detachPdfExportUi,
+  HTML2PDF_CANVAS_SCALE,
+  preloadLogoForPdf,
+  reportEscapeHtml,
+  REPORT_PDF_STYLES,
+  stylePdfExportCaptureRoot,
+  yieldUntilPaint,
+  runWithHtml2CanvasWillReadFrequentlyPatch,
+} from '../utils/reportExport';
 import * as Validation from '../utils/validation';
 import { Sporcu } from '../types';
 import type { Session } from '../types';
@@ -111,6 +127,7 @@ declare global {
       kaydet?: () => void;
       duzenle?: (id: number) => void;
       sil?: (id: number) => void;
+      tekrarAktifEt?: (id: number) => void;
       durumDegistir?: (id: number) => void;
       formuTemizle?: () => void;
       listeyiGuncelle?: () => void;
@@ -175,13 +192,22 @@ let filterCache: FilterCache = {
 
 /**
  * Sporcular dizisinin hash'ini oluştur (değişiklik kontrolü için)
+ * Not: Sadece uzunluk+ID yeterli değil — Ayrıldı↔Aktif gibi durum değişince hash değişmeli;
+ * aksi halde filterCache eski filtrelenmiş listeyi kullanır (F5 beklentisi).
  */
 function hashSporcular(sporcular: Sporcu[]): string {
-  // Basit hash: uzunluk + ilk ve son elemanın ID'leri
   if (sporcular.length === 0) return 'empty';
   const firstId = sporcular[0]?.id || 0;
   const lastId = sporcular[sporcular.length - 1]?.id || 0;
-  return `${sporcular.length}_${firstId}_${lastId}`;
+  let sig = 0;
+  for (const s of sporcular) {
+    sig = (((sig * 31 + (Number(s.id) || 0)) | 0) >>> 0) % 2147483647;
+    const d = s.durum || '';
+    for (let i = 0; i < d.length; i++) {
+      sig = (((sig * 31 + d.charCodeAt(i)) | 0) >>> 0) % 2147483647;
+    }
+  }
+  return `${sporcular.length}_${firstId}_${lastId}_${sig}`;
 }
 
 // AbortController for event listener cleanup
@@ -1227,6 +1253,11 @@ function handleSporcuListAction(e: Event): void {
     case 'toggle-status':
       if (window.Sporcu && typeof window.Sporcu.durumDegistir === 'function') {
         window.Sporcu.durumDegistir(sporcuId);
+      }
+      break;
+    case 'reactivate':
+      if (window.Sporcu && typeof window.Sporcu.tekrarAktifEt === 'function') {
+        window.Sporcu.tekrarAktifEt(sporcuId);
       }
       break;
   }
@@ -2660,31 +2691,40 @@ export function duzenle(id: number): void {
 }
 
 /**
- * Sporcu sil
+ * Sporcuyu arşivle (ayrıldı); aidat ve geçmiş kayıtlar korunur.
  * @param id - Sporcu ID
  */
 export function sil(id: number): void {
   const sporcu = Storage.sporcuBul(id);
   if (!sporcu) return;
+  if (sporcu.durum === 'Ayrıldı') {
+    Helpers.toast('Bu sporcu zaten arşivlenmiş (ayrıldı).', 'info');
+    return;
+  }
 
   const adSoyad = sporcu.temelBilgiler?.adSoyad || 'Sporcu';
   if (
     !Helpers.onay(
-      `"${adSoyad}" isimli sporcuyu silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz ve sporcuya ait tüm veriler (ödemeler, yoklamalar) silinecektir.`
+      `"${adSoyad}" kaydı arşivlenecek (ayrıldı).\n\nAidat ve tahsilat geçmişi silinmez; sporcu varsayılan listeden çıkar.\n\nDevam edilsin mi?`
     )
   ) {
     return;
   }
 
-  Storage.sporcuSil(id);
-  Helpers.toast('Sporcu silindi!', 'success');
+  const kendiMi = Helpers.onay(
+    `Ayrılma kaynağı:\n\nTamam = Öğrenci / veli kendi isteğiyle\nİptal = Okul / yönetici kaydı`
+  );
+  const kaynak: 'kendi' | 'yonetici' = kendiMi ? 'kendi' : 'yonetici';
+
+  Storage.sporcuAyrildi(id, kaynak);
+  Helpers.toast(
+    `Sporcu arşivlendi (${kendiMi ? 'kendi isteği' : 'yönetici'}). Muhasebe kayıtları korundu.`,
+    'success'
+  );
 
   listeyiGuncelle();
   bransFiltresiDoldur();
 
-  // Finansal bakiye güncellemesi: Dashboard'u güncelle (silinen aidat kayıtlarının finansal etkisi için)
-  // NOT: sporcuSil() fonksiyonu silinen aidat kayıtlarının finansal etkisini logluyor
-  // Dashboard modülü bu bilgiyi kullanarak bakiyeyi güncellemeli
   if (window.Dashboard && typeof window.Dashboard.guncelle === 'function') {
     window.Dashboard.guncelle();
   }
@@ -2692,6 +2732,34 @@ export function sil(id: number): void {
     window.Aidat.listeyiGuncelle();
   }
   if (window.Yoklama) window.Yoklama.listeyiGuncelle?.();
+}
+
+/**
+ * Arşivden (Ayrıldı) tekrar operasyonel listeye al — aidat geçmişi korunur.
+ */
+export function tekrarAktifEt(id: number): void {
+  const sporcu = Storage.sporcuBul(id);
+  if (!sporcu) return;
+  if (sporcu.durum !== 'Ayrıldı') {
+    Helpers.toast('Bu sporcu arşivlenmemiş; işlem gerekmiyor.', 'info');
+    return;
+  }
+  const ad = sporcu.temelBilgiler?.adSoyad || 'Sporcu';
+  if (
+    !Helpers.onay(
+      `"${ad}" tekrar aktif sporcu listesine alınsın mı?\n\n` +
+        `Ödeme günü, bugünün günü olarak ayarlanır; bu ay için henüz aidat borcu yoksa (burslu değilse) o aya borç yazılır. Geçmiş kayıtlar silinmez.`
+    )
+  ) {
+    return;
+  }
+  Storage.sporcuTekrarAktifEt(id);
+  Helpers.toast('Sporcu tekrar aktif listeye alındı.', 'success');
+  listeyiGuncelle();
+  bransFiltresiDoldur();
+  if (window.Dashboard?.guncelle) window.Dashboard.guncelle();
+  if (window.Aidat?.listeyiGuncelle) window.Aidat.listeyiGuncelle();
+  if (window.Yoklama?.listeyiGuncelle) window.Yoklama.listeyiGuncelle();
 }
 
 // ============================================================================
@@ -2940,20 +3008,20 @@ function wizardAdimValidate(step: number): boolean {
  * @param id - Sporcu ID
  */
 export function durumDegistir(id: number): void {
-  const sporcular = Storage.sporculariGetir();
-  const index = sporcular.findIndex(s => s.id === id);
-
-  if (index > -1 && sporcular[index]) {
-    const sporcu = sporcular[index];
-    sporcu.durum = sporcu.durum === 'Aktif' ? 'Pasif' : 'Aktif';
-    Storage.kaydet(Storage.STORAGE_KEYS.SPORCULAR, sporcular);
-
-    const yeniDurum = sporcu.durum;
-    Helpers.toast(`Sporcu durumu "${yeniDurum}" olarak güncellendi.`, 'success');
-
-    listeyiGuncelle();
-    if (window.Dashboard) window.Dashboard.guncelle();
+  const sporcu = Storage.sporcuBul(id);
+  if (!sporcu) return;
+  if (sporcu.durum === 'Ayrıldı') {
+    Helpers.toast('Arşivlenmiş sporcunun durumu buradan değiştirilemez.', 'info');
+    return;
   }
+  sporcu.durum = sporcu.durum === 'Aktif' ? 'Pasif' : 'Aktif';
+  Storage.sporcuKaydet(sporcu);
+
+  const yeniDurum = sporcu.durum;
+  Helpers.toast(`Sporcu durumu "${yeniDurum}" olarak güncellendi.`, 'success');
+
+  listeyiGuncelle();
+  if (window.Dashboard) window.Dashboard.guncelle();
 }
 
 /**
@@ -3022,9 +3090,22 @@ function createSporcuCard(
   const brans = Helpers.escapeHtml(sporcu.sporBilgileri?.brans || '-');
   const yasGrubu = Helpers.escapeHtml(sporcu.tffGruplari?.anaGrup || '-');
 
+  const ayrildi = sporcu.durum === 'Ayrıldı';
+  const kaynakEtiket =
+    sporcu.silinmeBilgisi?.kaynak === 'kendi'
+      ? 'Kendi isteği'
+      : sporcu.silinmeBilgisi?.kaynak === 'yonetici'
+        ? 'Yönetici'
+        : '';
+
   // Durum için class (yoklama modülü gibi)
   const durumClass = sporcu.durum === 'Aktif' ? 'aktif' : 'pasif';
-  const durumText = sporcu.durum === 'Aktif' ? 'AKTİF' : 'PASİF';
+  const durumText =
+    sporcu.durum === 'Aktif'
+      ? 'AKTİF'
+      : ayrildi
+        ? `AYRILDI${kaynakEtiket ? ' · ' + kaynakEtiket : ''}`
+        : 'PASİF';
   const durumBadgeClass = sporcu.durum === 'Aktif' ? 'devam-var' : 'devam-yok';
 
   // Durum butonu için class ve icon
@@ -3033,7 +3114,7 @@ function createSporcuCard(
   const durumTitle = sporcu.durum === 'Aktif' ? 'Pasif Yap' : 'Aktif Yap';
 
   // Kart class'ı (yoklama modülü gibi)
-  item.className = `sporcu-item ${durumClass}`;
+  item.className = `sporcu-item ${durumClass}${ayrildi ? ' ayrildi' : ''}`;
 
   // HTML oluştur - Yoklama modülü gibi kart görünümü
   item.innerHTML = `
@@ -3051,9 +3132,19 @@ function createSporcuCard(
             <button class="btn btn-small btn-icon btn-warning" data-action="edit" data-sporcu-id="${sporcu.id}" title="Düzenle">
               <i class="fa-solid fa-pen-to-square"></i>
             </button>
+            ${
+              ayrildi
+                ? `
+            <button class="btn btn-small btn-icon btn-success" data-action="reactivate" data-sporcu-id="${sporcu.id}" title="Tekrar aktif listeye al">
+              <i class="fa-solid fa-user-check"></i>
+            </button>
+            `
+                : `
             <button class="btn btn-small btn-icon ${durumButtonClass}" data-action="toggle-status" data-sporcu-id="${sporcu.id}" title="${durumTitle}">
               <i class="fa-solid ${durumIcon}"></i>
             </button>
+            `
+            }
           <button class="btn btn-small btn-icon btn-info btn-rapor" data-action="rapor" data-sporcu-id="${sporcu.id}" title="Rapor">
             <i class="fa-solid fa-chart-line"></i>
           </button>
@@ -3061,9 +3152,9 @@ function createSporcuCard(
             : ''
         }
         ${
-          silebilir
+          silebilir && !ayrildi
             ? `
-            <button class="btn btn-small btn-icon btn-danger" data-action="delete" data-sporcu-id="${sporcu.id}" title="Sil">
+            <button class="btn btn-small btn-icon btn-danger" data-action="delete" data-sporcu-id="${sporcu.id}" title="Arşivle (muhasebe korunur)">
               <i class="fa-solid fa-trash-alt"></i>
             </button>
           `
@@ -3084,6 +3175,21 @@ function createSporcuCard(
 // - Pagination
 // - Kart oluşturma
 // ============================================================================
+
+/**
+ * Sporcu listesi filtrelerini varsayılana döndür (modül değişiminde Ayrıldı vb. kalmasın).
+ */
+export function listeFiltreleriniSifirla(): void {
+  const durumFiltre = Helpers.$('#durumFiltre') as HTMLSelectElement | null;
+  const bransFiltre = Helpers.$('#bransFiltre') as HTMLSelectElement | null;
+  const searchBox = Helpers.$('#searchBox') as HTMLInputElement | null;
+  if (durumFiltre) durumFiltre.value = '';
+  if (bransFiltre) bransFiltre.value = '';
+  if (searchBox) searchBox.value = '';
+  filterCache.lastSporcularHash = null;
+  filterCache.cachedResults = null;
+  listeyiGuncelle();
+}
 
 /**
  * Listeyi güncelle
@@ -3180,9 +3286,14 @@ export function listeyiGuncelle(): void {
           const bransUygun =
             !bransFiltreValue ||
             (s.sporBilgileri?.brans?.toLowerCase() || '') === bransFiltreValue.toLowerCase();
-          // Durum filtresi (case-insensitive)
-          const durumUygun =
-            !durumFiltreValue || (s.durum?.toLowerCase() || '') === durumFiltreValue.toLowerCase();
+          // Durum: filtre boşken varsayılan listede "Ayrıldı" gösterme; "Ayrıldı" seçilince sadece onlar
+          const durumUygun = (() => {
+            const d = s.durum || '';
+            if (!durumFiltreValue) {
+              return d !== 'Ayrıldı';
+            }
+            return d === durumFiltreValue;
+          })();
 
           return adUygun && bransUygun && durumUygun;
         });
@@ -4517,9 +4628,12 @@ interface SporcuDetayRaporu {
     devamOrani: number;
   };
   finansal: {
+    /** Net ödenecek tutar (outstanding balance) */
     toplamBorc: number;
-    aidatBorcu: number;
-    malzemeBorcu: number;
+    tahakkukAidat: number;
+    tahakkukMalzeme: number;
+    tahsilatToplam: number;
+    fazlaOdeme: number;
     sonOdemeTarihi: string | null;
     odemeGecmisi: Array<{
       donem: string;
@@ -4568,34 +4682,21 @@ function sporcuDetayRaporu(sporcuId: number): SporcuDetayRaporu | null {
     geldigiGunler.sort((a, b) => new Date(b.tarih).getTime() - new Date(a.tarih).getTime());
     gelmedigiGunler.sort((a, b) => new Date(b.tarih).getTime() - new Date(a.tarih).getTime());
 
-    // Finansal bilgiler
-    // KRİTİK: Gelecek aylar için oluşturulan borç kayıtları (zam sonrası) mevcut borç hesaplamalarına dahil edilmemeli
-    const bugunTarih = new Date();
-    const buAy = bugunTarih.getMonth() + 1;
-    const buYil = bugunTarih.getFullYear();
     const sporcuAidatlari = aidatlar.filter(a => a.sporcuId === sporcuId);
-    let toplamBorc = 0;
-    let aidatBorcu = 0;
-    let malzemeBorcu = 0;
-    let sonOdemeTarihi: string | null = null;
 
+    // Merkezi hesap: tahakkuk (brüt) kalemleri + tahsilat → net ödenecek / fazla ödeme
+    const fin = Helpers.finansalHesapla(aidatlar, sporcuId);
+
+    let sonOdemeTarihi: string | null = null;
     sporcuAidatlari.forEach(a => {
-      const tutar = a.tutar || 0;
-      if (tutar > 0) {
-        // Gelecek aylar için borç kayıtlarını hariç tut
-        if (!Helpers.gelecekAylarFiltresi(a, buAy, buYil)) {
-          return; // Gelecek ay Aidat borçlarını hariç tut
-        }
-        // Borç (geçmiş ve mevcut ay borçları)
-        toplamBorc += tutar;
-        if (a.islem_turu === 'Malzeme') {
-          malzemeBorcu += tutar;
-        } else {
-          aidatBorcu += tutar;
-        }
-      } else if (tutar < 0 && !sonOdemeTarihi) {
-        // Son ödeme tarihi (ilk negatif tutar = ödeme)
-        sonOdemeTarihi = a.tarih || null;
+      const tahsilatMi = (a.tutar || 0) < 0 || a.islem_turu === 'Tahsilat';
+      if (!tahsilatMi) return;
+      const tarihStr = a.odemeTarihi || a.tarih;
+      if (!tarihStr) return;
+      const d = new Date(tarihStr).getTime();
+      if (Number.isNaN(d)) return;
+      if (!sonOdemeTarihi || d > new Date(sonOdemeTarihi).getTime()) {
+        sonOdemeTarihi = tarihStr;
       }
     });
 
@@ -4659,9 +4760,11 @@ function sporcuDetayRaporu(sporcuId: number): SporcuDetayRaporu | null {
         ),
       },
       finansal: {
-        toplamBorc,
-        aidatBorcu,
-        malzemeBorcu,
+        toplamBorc: fin.kalanBorc,
+        tahakkukAidat: fin.tahakkukAidat,
+        tahakkukMalzeme: fin.tahakkukMalzeme,
+        tahsilatToplam: fin.toplamTahsilat,
+        fazlaOdeme: fin.fazlaOdeme,
         sonOdemeTarihi,
         odemeGecmisi,
       },
@@ -5211,17 +5314,30 @@ function raporRender(rapor: SporcuDetayRaporu): void {
         </div>
         <div class="rapor-card-body">
           <div class="rapor-stat">
-            <span class="rapor-stat-label">Toplam Borç</span>
-            <span class="rapor-stat-value ${rapor.finansal.toplamBorc > 0 ? 'text-danger' : 'text-success'}">${Helpers.paraFormat(rapor.finansal.toplamBorc)} TL</span>
+            <span class="rapor-stat-label">Aidat (tahakkuk)</span>
+            <span class="rapor-stat-value">${Helpers.paraFormat(rapor.finansal.tahakkukAidat)} TL</span>
           </div>
           <div class="rapor-stat">
-            <span class="rapor-stat-label">Aidat</span>
-            <span class="rapor-stat-value">${Helpers.paraFormat(rapor.finansal.aidatBorcu)} TL</span>
+            <span class="rapor-stat-label">Malzeme (tahakkuk)</span>
+            <span class="rapor-stat-value">${Helpers.paraFormat(rapor.finansal.tahakkukMalzeme)} TL</span>
           </div>
           <div class="rapor-stat">
-            <span class="rapor-stat-label">Malzeme</span>
-            <span class="rapor-stat-value">${Helpers.paraFormat(rapor.finansal.malzemeBorcu)} TL</span>
+            <span class="rapor-stat-label">Tahsilat</span>
+            <span class="rapor-stat-value">${Helpers.paraFormat(rapor.finansal.tahsilatToplam)} TL</span>
           </div>
+          <div class="rapor-stat rapor-stat--net">
+            <span class="rapor-stat-label">Ödenecek bakiye</span>
+            <span class="rapor-stat-value ${rapor.finansal.toplamBorc > 0 ? 'text-danger' : 'text-success'}">${rapor.finansal.toplamBorc === 0 ? '—' : `${Helpers.paraFormat(rapor.finansal.toplamBorc)} TL`}</span>
+          </div>
+          ${
+            rapor.finansal.fazlaOdeme > 0
+              ? `
+          <div class="rapor-stat">
+            <span class="rapor-stat-label">Fazla ödeme (alacak)</span>
+            <span class="rapor-stat-value text-success">${Helpers.paraFormat(rapor.finansal.fazlaOdeme)} TL</span>
+          </div>`
+              : ''
+          }
         </div>
       </div>
     </div>
@@ -5605,16 +5721,9 @@ function raporRender(rapor: SporcuDetayRaporu): void {
       return;
     }
 
-    // Tarih ve saat bilgileri
-    const simdi = new Date();
-    const tarih = simdi.toLocaleDateString('tr-TR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      weekday: 'long',
-    });
-    const saat = simdi.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-    const raporNo = `ATH-${simdi.getFullYear()}${String(simdi.getMonth() + 1).padStart(2, '0')}${String(simdi.getDate()).padStart(2, '0')}-${String(Date.now()).slice(-6)}`;
+    const docMeta = buildReportDocumentMeta();
+    const logoSrc = Helpers.soybisLogoUrl();
+    const sporcuAdiGuvenli = reportEscapeHtml(sporcuAdi);
 
     // Mevcut DOM'u kopyala ve temizle
     const raporClone = raporContent.cloneNode(true) as HTMLElement;
@@ -5777,6 +5886,49 @@ function raporRender(rapor: SporcuDetayRaporu): void {
     const sonKartlar = kartlar.filter(k => ozetKartlar.includes(k.baslik));
     const siraliKartlar = [...normalKartlar, ...sonKartlar];
 
+    const raporSporcuId =
+      lastRaporSporcuId ??
+      (() => {
+        const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('lastRaporSporcuId') : null;
+        return raw ? parseInt(raw, 10) : 0;
+      })();
+    if (raporSporcuId > 0) {
+      const fresh = sporcuDetayRaporu(raporSporcuId);
+      if (fresh) {
+        const f = fresh.finansal;
+        const fmt = (n: number) => `${Helpers.paraFormat(n)} TL`;
+        const finVeriler: Array<{
+          label: string;
+          deger: string;
+          tip?: 'positive' | 'negative' | 'normal';
+        }> = [
+          { label: 'Aidat (tahakkuk)', deger: fmt(f.tahakkukAidat), tip: 'normal' },
+          { label: 'Malzeme (tahakkuk)', deger: fmt(f.tahakkukMalzeme), tip: 'normal' },
+          { label: 'Tahsilat', deger: fmt(f.tahsilatToplam), tip: 'normal' },
+          {
+            label: 'Ödenecek bakiye',
+            deger: f.toplamBorc === 0 ? '—' : fmt(f.toplamBorc),
+            tip: f.toplamBorc > 0 ? 'negative' : 'positive',
+          },
+        ];
+        if (f.fazlaOdeme > 0) {
+          finVeriler.push({
+            label: 'Fazla ödeme (alacak)',
+            deger: fmt(f.fazlaOdeme),
+            tip: 'positive',
+          });
+        }
+        const fi = siraliKartlar.findIndex(k => k.baslik === 'Finansal Durum');
+        if (fi >= 0) {
+          siraliKartlar[fi] = {
+            baslik: 'Finansal Durum',
+            veriler: finVeriler,
+            tip: 'grid',
+          };
+        }
+      }
+    }
+
     // Debug log
     console.log('📊 Sporcu PDF Veri Toplama:', {
       kartSayisi: siraliKartlar.length,
@@ -5802,18 +5954,15 @@ function raporRender(rapor: SporcuDetayRaporu): void {
       console.warn('⚠️ PDF: Sporcu veri toplama başarısız, DOM direkt kullanılıyor...');
       // Mevcut içeriği direkt kullan
       const tempDiv = document.createElement('div');
-      tempDiv.style.position = 'fixed';
-      tempDiv.style.top = '0';
-      tempDiv.style.left = '0';
-      tempDiv.style.width = '210mm';
+      tempDiv.style.width = pdfExportRootWidthMm(PDF_EXPORT_MARGIN_MM);
       tempDiv.style.background = '#ffffff';
-      tempDiv.style.zIndex = '99999';
       tempDiv.style.overflow = 'visible';
       tempDiv.style.padding = '20mm 15mm';
       tempDiv.style.fontFamily = "'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
       tempDiv.style.fontSize = '10pt';
       tempDiv.style.color = '#1a202c';
       tempDiv.style.lineHeight = '1.6';
+      stylePdfExportCaptureRoot(tempDiv);
 
       // Header ekle
       const header = document.createElement('div');
@@ -5821,10 +5970,23 @@ function raporRender(rapor: SporcuDetayRaporu): void {
       header.style.paddingBottom = '15px';
       header.style.marginBottom = '25px';
       header.innerHTML = `
-      <div style="text-align: center;">
-        <div style="font-size: 20pt; font-weight: 700; color: #1a365d; margin-bottom: 5px;">${sporcuAdi}</div>
-        <div style="font-size: 11pt; color: #4a5568; margin-bottom: 8px;">Öğrenci Detay Raporu</div>
-        <div style="font-size: 9pt; color: #718096;">Rapor No: ${raporNo} | ${tarih} ${saat}</div>
+      <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 3px solid #0f172a;">
+        <div style="display: flex; align-items: center; gap: 14px;">
+          <img src="${logoSrc}" alt="SOYBIS" width="52" height="52" style="object-fit: contain;" crossorigin="anonymous" />
+          <div>
+            <div style="font-size: 11pt; font-weight: 700; letter-spacing: 0.04em; color: #0f172a;">SOYBIS</div>
+            <div style="font-size: 8.5pt; color: #475569;">Spor Okulları Yönetim Bilgi Sistemi</div>
+          </div>
+        </div>
+        <div style="border: 1px solid #cbd5e1; border-radius: 4px; padding: 8px 12px; background: #f8fafc; font-size: 7.5pt; line-height: 1.5; color: #334155;">
+          <div><strong style="color:#0f172a;">Belge no</strong> ${docMeta.referenceId}</div>
+          <div><strong style="color:#0f172a;">Tarih</strong> ${docMeta.dateDisplayTr}</div>
+          <div><strong style="color:#0f172a;">UTC</strong> ${docMeta.iso8601Utc}</div>
+        </div>
+      </div>
+      <div style="margin-top: 12px;">
+        <div style="font-size: 15pt; font-weight: 700; color: #0f172a;">${sporcuAdiGuvenli}</div>
+        <div style="font-size: 9pt; color: #64748b; margin-top: 4px;">Öğrenci detay raporu / Athlete profile report</div>
       </div>
     `;
       tempDiv.appendChild(header);
@@ -5841,421 +6003,120 @@ function raporRender(rapor: SporcuDetayRaporu): void {
       footer.style.fontSize = '8pt';
       footer.style.color = '#718096';
       footer.innerHTML = `
-      <div>SOY-BIS v3.0 - Spor Okulları Yönetim Bilgi Sistemi</div>
-      <div>Bu rapor elektronik ortamda oluşturulmuştur ve yasal geçerliliğe sahiptir.</div>
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;font-size:7.5pt;color:#64748b;border-top:1px solid #cbd5e1;padding-top:12px;margin-top:16px;">
+        <div><strong style="color:#0f172a;">SOYBIS</strong> · Yalnızca kurum içi kullanım / Internal use only</div>
+        <div style="font-family:ui-monospace,monospace;font-size:7pt;">${docMeta.iso8601Utc}</div>
+      </div>
     `;
       tempDiv.appendChild(footer);
 
       document.body.appendChild(tempDiv);
+      const pdfOverlay = createPdfExportLoadingOverlay();
+      document.body.appendChild(pdfOverlay);
 
-      // Render bekle ve PDF oluştur
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          const opt = {
-            margin: 0,
-            filename: `Athlete_Report_${sporcuAdi.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
-            image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: {
-              scale: 2,
-              useCORS: true,
-              letterRendering: true,
-              logging: false,
-              width: 794,
-              height: tempDiv.scrollHeight,
-            },
-            jsPDF: {
-              unit: 'mm',
-              format: 'a4',
-              orientation: 'portrait',
-              compress: true,
-            },
-            pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-          };
+      void (async () => {
+        await yieldUntilPaint();
+        await preloadLogoForPdf(logoSrc);
+        await yieldUntilPaint();
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            void (async () => {
+              applyHtml2PdfAvoidSpacers(tempDiv, PDF_EXPORT_MARGIN_MM);
+              const w = Math.max(1, tempDiv.scrollWidth || 794);
+              const h = Math.max(1, tempDiv.scrollHeight || 1200);
+              const opt = {
+                margin: [...PDF_EXPORT_MARGIN_MM],
+                filename: `Athlete_Report_${sporcuAdi.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: {
+                  scale: HTML2PDF_CANVAS_SCALE,
+                  useCORS: true,
+                  letterRendering: true,
+                  logging: false,
+                  width: w,
+                  height: h,
+                  windowWidth: w,
+                  windowHeight: h,
+                },
+                jsPDF: {
+                  unit: 'mm',
+                  format: 'a4',
+                  orientation: 'portrait',
+                  compress: true,
+                },
+                pagebreak: { ...PDF_HTML2PDF_PAGE_BREAK },
+              };
 
-          (window as any)
-            .html2pdf()
-            .set(opt)
-            .from(tempDiv)
-            .save()
-            .then(() => {
-              document.body.removeChild(tempDiv);
-              Helpers.toast('PDF başarıyla indirildi!', 'success');
-            })
-            .catch((error: Error) => {
-              console.error('PDF oluşturma hatası:', error);
-              document.body.removeChild(tempDiv);
-              Helpers.toast('PDF oluşturulurken hata oluştu!', 'error');
-              window.print();
-            });
-        }, 800);
-      });
+              await yieldUntilPaint();
+
+              try {
+                await runWithHtml2CanvasWillReadFrequentlyPatch(() =>
+                  (window as any).html2pdf().set(opt).from(tempDiv).save()
+                );
+                detachPdfExportUi(tempDiv, pdfOverlay);
+                Helpers.toast('PDF başarıyla indirildi!', 'success');
+              } catch (error: unknown) {
+                console.error('PDF oluşturma hatası:', error);
+                detachPdfExportUi(tempDiv, pdfOverlay);
+                Helpers.toast('PDF oluşturulurken hata oluştu!', 'error');
+                window.print();
+              }
+            })();
+          });
+        });
+      })();
       return;
     }
 
-    // Profesyonel PDF HTML template
     const pdfHTML = `
 <!DOCTYPE html>
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${sporcuAdi} - Sporcu Detay Raporu</title>
-  <style>
-    @page {
-      size: A4;
-      margin: 0;
-    }
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    body {
-      font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-      font-size: 10pt;
-      line-height: 1.6;
-      color: #1a202c;
-      background: #ffffff;
-      padding: 0;
-    }
-    .pdf-page {
-      width: 210mm;
-      min-height: 297mm;
-      background: #ffffff;
-      position: relative;
-      display: flex;
-      flex-direction: column;
-    }
-    /* CV-Style Header - Kompakt */
-    .pdf-header {
-      background: linear-gradient(135deg, #1a365d 0%, #2d3748 100%);
-      color: #ffffff;
-      padding: 10mm 20mm 8mm 20mm;
-      position: relative;
-      overflow: hidden;
-    }
-    .pdf-header::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      right: 0;
-      width: 120px;
-      height: 120px;
-      background: rgba(196, 92, 62, 0.1);
-      border-radius: 50%;
-      transform: translate(30%, -30%);
-    }
-    .pdf-header-content {
-      position: relative;
-      z-index: 1;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .pdf-header-left {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .pdf-logo-area {
-      width: 50px;
-      height: 50px;
-      background: rgba(255, 255, 255, 0.15);
-      border: 2px solid rgba(255, 255, 255, 0.3);
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 24px;
-      backdrop-filter: blur(10px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-      flex-shrink: 0;
-    }
-    .pdf-header-text {
-      flex: 1;
-    }
-    .pdf-title {
-      font-size: 18pt;
-      font-weight: 800;
-      color: #ffffff;
-      margin-bottom: 2px;
-      letter-spacing: -0.5px;
-      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-      line-height: 1.1;
-    }
-    .pdf-subtitle {
-      font-size: 9pt;
-      color: rgba(255, 255, 255, 0.9);
-      font-weight: 400;
-      line-height: 1.2;
-    }
-    .pdf-header-right {
-      text-align: right;
-      font-size: 8pt;
-      color: rgba(255, 255, 255, 0.85);
-      line-height: 1.4;
-      flex-shrink: 0;
-    }
-    .pdf-header-right strong {
-      color: #ffffff;
-      font-weight: 600;
-      display: block;
-      margin-bottom: 0px;
-    }
-    .pdf-meta {
-      font-size: 9pt;
-      color: #718096;
-      line-height: 1.6;
-    }
-    .pdf-meta strong {
-      color: #2d3748;
-      font-weight: 600;
-    }
-    /* Content Area */
-    .pdf-content {
-      padding: 20mm;
-      flex: 1;
-    }
-    /* CV-Style Section - Page Break Optimized */
-    .pdf-section {
-      margin-bottom: 25px;
-      page-break-inside: avoid;
-      break-inside: avoid;
-      orphans: 3;
-      widows: 3;
-    }
-    .pdf-section-title {
-      font-size: 16pt;
-      font-weight: 700;
-      color: #1a365d;
-      margin-bottom: 12px;
-      padding-bottom: 8px;
-      border-bottom: 3px solid #c45c3e;
-      position: relative;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      page-break-after: avoid;
-      break-after: avoid;
-    }
-    .pdf-section-title + * {
-      page-break-before: avoid;
-      break-before: avoid;
-    }
-    .pdf-section-title::before {
-      content: '';
-      width: 5px;
-      height: 24px;
-      background: linear-gradient(180deg, #c45c3e 0%, #e07b5a 100%);
-      border-radius: 3px;
-      box-shadow: 0 2px 4px rgba(196, 92, 62, 0.3);
-    }
-    .pdf-table {
-      width: 100%;
-      border-collapse: separate;
-      border-spacing: 0;
-      margin-bottom: 20px;
-      background: #ffffff;
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-    }
-    .pdf-table thead {
-      background: linear-gradient(135deg, #1a365d 0%, #2d3748 100%);
-      color: #ffffff;
-    }
-    .pdf-table th {
-      padding: 14px 16px;
-      text-align: left;
-      font-weight: 600;
-      font-size: 9.5pt;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      border-right: 1px solid rgba(255, 255, 255, 0.15);
-    }
-    .pdf-table th:first-child {
-      padding-left: 20px;
-    }
-    .pdf-table th:last-child {
-      border-right: none;
-      padding-right: 20px;
-    }
-    .pdf-table td {
-      padding: 14px 16px;
-      border-bottom: 1px solid #f0f4f8;
-      font-size: 10pt;
-      transition: background 0.2s;
-    }
-    .pdf-table td:first-child {
-      padding-left: 20px;
-    }
-    .pdf-table td:last-child {
-      padding-right: 20px;
-    }
-    .pdf-table tbody tr {
-      transition: background 0.2s;
-    }
-    .pdf-table tbody tr:nth-child(even) {
-      background: #f8fafc;
-    }
-    .pdf-table tbody tr:hover {
-      background: #f0f7ff;
-    }
-    .pdf-table tbody tr:last-child td {
-      border-bottom: none;
-    }
-    .pdf-label {
-      font-weight: 600;
-      color: #2d3748;
-      width: 40%;
-    }
-    .pdf-value {
-      color: #1a365d;
-      font-weight: 500;
-    }
-    .pdf-value.positive {
-      color: #38a169;
-      font-weight: 600;
-    }
-    .pdf-value.negative {
-      color: #e53e3e;
-      font-weight: 600;
-    }
-    /* Stats Grid (for summary cards) */
-    .pdf-stats-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 15px;
-      margin-bottom: 20px;
-    }
-    .pdf-stat-card {
-      background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
-      border: 2px solid #e2e8f0;
-      border-radius: 10px;
-      padding: 18px;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-    .pdf-stat-label {
-      font-size: 9pt;
-      color: #718096;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 8px;
-    }
-    .pdf-stat-value {
-      font-size: 20pt;
-      font-weight: 700;
-      color: #1a365d;
-    }
-    .pdf-stat-value.positive {
-      color: #38a169;
-    }
-    .pdf-stat-value.negative {
-      color: #e53e3e;
-    }
-    /* Footer */
-    .pdf-footer {
-      background: #f8fafc;
-      border-top: 2px solid #e2e8f0;
-      padding: 12mm 20mm;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 8pt;
-      color: #718096;
-      margin-top: auto;
-    }
-    .pdf-footer-left {
-      text-align: left;
-      line-height: 1.6;
-    }
-    .pdf-footer-right {
-      text-align: right;
-      line-height: 1.6;
-    }
-    .pdf-page-number {
-      font-weight: 700;
-      color: #4a5568;
-      font-size: 9pt;
-    }
-    .pdf-footer-brand {
-      font-weight: 600;
-      color: #1a365d;
-    }
-    /* Print optimizations - Prevent orphaned content */
-    @media print {
-      .pdf-page {
-        page-break-after: always;
-      }
-      .pdf-page:last-child {
-        page-break-after: auto;
-      }
-      .pdf-table {
-        page-break-inside: avoid;
-        break-inside: avoid;
-      }
-      .pdf-table thead {
-        display: table-header-group;
-      }
-      .pdf-table tbody tr {
-        page-break-inside: avoid;
-        break-inside: avoid;
-      }
-      .pdf-table tbody tr:first-child {
-        page-break-before: avoid;
-        break-before: avoid;
-      }
-      .pdf-stats-grid {
-        page-break-inside: avoid;
-        break-inside: avoid;
-      }
-      .pdf-stat-card {
-        page-break-inside: avoid;
-        break-inside: avoid;
-      }
-    }
-  </style>
+  <title>${sporcuAdiGuvenli} — SOYBIS</title>
+  <style>${REPORT_PDF_STYLES}</style>
 </head>
 <body>
   <div class="pdf-page">
-    <!-- CV-Style Header -->
-    <div class="pdf-header">
-      <div class="pdf-header-content">
-        <div class="pdf-header-left">
-          <div class="pdf-logo-area">⚽</div>
-          <div class="pdf-header-text">
-            <div class="pdf-title">${sporcuAdi}</div>
-            <div class="pdf-subtitle">Öğrenci Detay Raporu</div>
+    <div class="pdf-letterhead">
+      <div class="pdf-letterhead-row">
+        <div class="pdf-brand">
+          <div class="pdf-logo-box">
+            <img src="${logoSrc}" alt="SOYBIS" width="52" height="52" loading="eager" crossorigin="anonymous" />
+          </div>
+          <div>
+            <div class="pdf-org-name">SOYBIS</div>
+            <div class="pdf-org-tagline">Spor Okulları Yönetim Bilgi Sistemi</div>
           </div>
         </div>
-        <div class="pdf-header-right">
-          <div><strong>Rapor No</strong> ${raporNo}</div>
-          <div><strong>Tarih</strong> ${tarih}</div>
-          <div><strong>Saat</strong> ${saat}</div>
-          <div><strong>Sistem</strong> SOY-BIS v3.0</div>
+        <div class="pdf-doc-control">
+          <div><strong>Belge no</strong> ${reportEscapeHtml(docMeta.referenceId)}</div>
+          <div><strong>Oluşturma</strong> ${reportEscapeHtml(docMeta.dateDisplayTr)}</div>
+          <div><strong>Saat</strong> ${reportEscapeHtml(docMeta.timeDisplayTr)}</div>
+          <div><strong>Saat dilimi</strong> ${reportEscapeHtml(docMeta.timezoneLabel)}</div>
+          <div><strong>UTC</strong> ${reportEscapeHtml(docMeta.iso8601Utc)}</div>
         </div>
       </div>
+      <div class="pdf-report-title-block">
+        <div class="pdf-h1">${sporcuAdiGuvenli}</div>
+        <div class="pdf-h1-sub">Öğrenci detay raporu · Athlete profile report · Bilgilendirme amaçlıdır</div>
+      </div>
     </div>
-
-    <!-- Content -->
     <div class="pdf-content">
       ${siraliKartlar
-        .map((kart, index) => {
+        .map(kart => {
           if (kart.tip === 'grid') {
-            // Grid layout for summary cards (Devam Durumu, Finansal Durum)
             return `
             <div class="pdf-section">
-              <div class="pdf-section-title">${kart.baslik}</div>
+              <div class="pdf-h2">${reportEscapeHtml(kart.baslik)}</div>
               <div class="pdf-stats-grid">
                 ${kart.veriler
                   .map(
                     v => `
                   <div class="pdf-stat-card">
-                    <div class="pdf-stat-label">${v.label}</div>
-                    <div class="pdf-stat-value ${v.tip === 'positive' ? 'positive' : v.tip === 'negative' ? 'negative' : ''}">${v.deger}</div>
+                    <div class="pdf-stat-label">${reportEscapeHtml(v.label)}</div>
+                    <div class="pdf-stat-value ${v.tip === 'positive' ? 'positive' : v.tip === 'negative' ? 'negative' : ''}">${reportEscapeHtml(v.deger)}</div>
                   </div>
                 `
                   )
@@ -6263,16 +6124,15 @@ function raporRender(rapor: SporcuDetayRaporu): void {
               </div>
             </div>
           `;
-          } else {
-            // Table layout for detailed information
-            return `
+          }
+          return `
             <div class="pdf-section">
-              <div class="pdf-section-title">${kart.baslik}</div>
+              <div class="pdf-h2">${reportEscapeHtml(kart.baslik)}</div>
               <table class="pdf-table">
                 <thead>
                   <tr>
-                    <th>Açıklama</th>
-                    <th>Değer</th>
+                    <th>Alan / Field</th>
+                    <th>Değer / Value</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -6280,8 +6140,8 @@ function raporRender(rapor: SporcuDetayRaporu): void {
                     .map(
                       v => `
                     <tr>
-                      <td class="pdf-label">${v.label}</td>
-                      <td class="pdf-value ${v.tip === 'positive' ? 'positive' : v.tip === 'negative' ? 'negative' : ''}">${v.deger}</td>
+                      <td class="pdf-td-label">${reportEscapeHtml(v.label)}</td>
+                      <td class="pdf-td-value ${v.tip === 'positive' ? 'positive' : v.tip === 'negative' ? 'negative' : ''}">${reportEscapeHtml(v.deger)}</td>
                     </tr>
                   `
                     )
@@ -6290,22 +6150,18 @@ function raporRender(rapor: SporcuDetayRaporu): void {
               </table>
             </div>
           `;
-          }
         })
         .join('')}
     </div>
-
-    <!-- Footer -->
     <div class="pdf-footer">
       <div class="pdf-footer-left">
-        <div class="pdf-footer-brand">SOY-BIS v3.0</div>
-        <div>Spor Okulları Yönetim Bilgi Sistemi</div>
-        <div style="margin-top: 4px; font-size: 7.5pt; color: #a0aec0;">Bu rapor elektronik ortamda oluşturulmuştur ve yasal geçerliliğe sahiptir.</div>
+        <div class="pdf-footer-title">SOYBIS · Sürüm 3.x</div>
+        <div>Gizlilik: yalnızca yetkili kullanıcılar. / Confidential: authorized use only.</div>
+        <div class="pdf-footer-iso">${reportEscapeHtml(docMeta.iso8601Utc)}</div>
       </div>
       <div class="pdf-footer-right">
-        <div class="pdf-page-number">Sayfa 1</div>
-        <div>${tarih}</div>
-        <div style="margin-top: 4px; font-size: 7.5pt; color: #a0aec0;">${saat}</div>
+        <div><strong>Sayfa</strong> 1 / 1</div>
+        <div>${reportEscapeHtml(docMeta.dateDisplayTr)}</div>
       </div>
     </div>
   </div>
@@ -6315,70 +6171,75 @@ function raporRender(rapor: SporcuDetayRaporu): void {
 
     // Geçici container oluştur
     const tempDiv = document.createElement('div');
-    tempDiv.style.position = 'fixed';
-    tempDiv.style.top = '0';
-    tempDiv.style.left = '0';
-    tempDiv.style.width = '210mm';
+    tempDiv.style.width = pdfExportRootWidthMm(PDF_EXPORT_MARGIN_MM);
     tempDiv.style.background = '#ffffff';
-    tempDiv.style.zIndex = '99999';
     tempDiv.style.overflow = 'visible';
     tempDiv.innerHTML = pdfHTML;
+    stylePdfExportCaptureRoot(tempDiv);
     document.body.appendChild(tempDiv);
+    const pdfOverlay = createPdfExportLoadingOverlay();
+    document.body.appendChild(pdfOverlay);
 
-    // Render bekle - Daha uzun süre bekle
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        // Element'in render edildiğinden emin ol
-        const height = tempDiv.scrollHeight || tempDiv.offsetHeight || 1200;
-        const width = tempDiv.scrollWidth || tempDiv.offsetWidth || 794;
+    void (async () => {
+      await yieldUntilPaint();
+      await preloadLogoForPdf(logoSrc);
+      await yieldUntilPaint();
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          void (async () => {
+            applyHtml2PdfAvoidSpacers(tempDiv, PDF_EXPORT_MARGIN_MM);
 
-        console.log('📄 Sporcu PDF oluşturuluyor...', {
-          width,
-          height,
-          kartSayisi: kartlar.length,
-          innerHTMLLength: tempDiv.innerHTML.length,
+            const height = Math.max(1, tempDiv.scrollHeight || tempDiv.offsetHeight || 1200);
+            const width = Math.max(1, tempDiv.scrollWidth || tempDiv.offsetWidth || 794);
+
+            console.log('📄 Sporcu PDF oluşturuluyor...', {
+              width,
+              height,
+              kartSayisi: siraliKartlar.length,
+              innerHTMLLength: tempDiv.innerHTML.length,
+            });
+
+            const opt = {
+              margin: [...PDF_EXPORT_MARGIN_MM],
+              filename: `Athlete_Report_${sporcuAdi.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+              image: { type: 'jpeg', quality: 0.98 },
+              html2canvas: {
+                scale: HTML2PDF_CANVAS_SCALE,
+                useCORS: true,
+                letterRendering: true,
+                logging: false,
+                width,
+                height,
+                windowWidth: width,
+                windowHeight: height,
+              },
+              jsPDF: {
+                unit: 'mm',
+                format: 'a4',
+                orientation: 'portrait',
+                compress: true,
+              },
+              pagebreak: { ...PDF_HTML2PDF_PAGE_BREAK },
+            };
+
+            await yieldUntilPaint();
+
+            try {
+              await runWithHtml2CanvasWillReadFrequentlyPatch(() =>
+                (window as any).html2pdf().set(opt).from(tempDiv).save()
+              );
+              detachPdfExportUi(tempDiv, pdfOverlay);
+              Helpers.toast('PDF başarıyla indirildi!', 'success');
+            } catch (error: unknown) {
+              console.error('PDF oluşturma hatası:', error);
+              detachPdfExportUi(tempDiv, pdfOverlay);
+              Helpers.toast('PDF oluşturulurken hata oluştu!', 'error');
+              window.print();
+            }
+          })();
         });
-
-        const opt = {
-          margin: 0,
-          filename: `Athlete_Report_${sporcuAdi.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: {
-            scale: 2,
-            useCORS: true,
-            letterRendering: true,
-            logging: false,
-            width: width,
-            height: height,
-            windowWidth: width,
-            windowHeight: height,
-          },
-          jsPDF: {
-            unit: 'mm',
-            format: 'a4',
-            orientation: 'portrait',
-            compress: true,
-          },
-          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-        };
-
-        (window as any)
-          .html2pdf()
-          .set(opt)
-          .from(tempDiv)
-          .save()
-          .then(() => {
-            document.body.removeChild(tempDiv);
-            Helpers.toast('PDF başarıyla indirildi!', 'success');
-          })
-          .catch((error: Error) => {
-            console.error('PDF oluşturma hatası:', error);
-            document.body.removeChild(tempDiv);
-            Helpers.toast('PDF oluşturulurken hata oluştu!', 'error');
-            window.print();
-          });
-      }, 1000); // Daha uzun bekleme süresi
-    });
+      });
+    })();
   };
 
   if (geriBtn && raporGeriBtnHandler) {
@@ -6626,6 +6487,7 @@ function topluZamGecerliMi(values: TopluZamFormValues): boolean {
 function topluZamSporculariFiltrele(values: TopluZamFormValues): Sporcu[] {
   return Storage.sporculariGetir().filter(s => {
     if (s.odemeBilgileri?.burslu) return false;
+    if (s.durum === 'Ayrıldı' && values.durumFiltre !== 'Ayrıldı') return false;
     if (values.bransFiltre && s.sporBilgileri?.brans !== values.bransFiltre) return false;
     if (values.durumFiltre && s.durum !== values.durumFiltre) return false;
     if (values.yasGrubuFiltre && s.tffGruplari?.anaGrup !== values.yasGrubuFiltre) return false;
@@ -6835,6 +6697,7 @@ function topluZamModalOlustur(): HTMLElement | null {
                 <select id="zamDurumFiltre" class="form-control">
                   <option value="Aktif">Aktif</option>
                   <option value="Pasif">Pasif</option>
+                  <option value="Ayrıldı">Ayrıldı</option>
                   <option value="">Tümü</option>
                 </select>
               </div>
@@ -7074,8 +6937,10 @@ if (typeof window !== 'undefined') {
     kaydet,
     duzenle,
     sil,
+    tekrarAktifEt,
     durumDegistir,
     formuTemizle,
+    listeFiltreleriniSifirla,
     listeyiGuncelle,
     aktifSporcuSayisi,
     yasGrubunaGore,

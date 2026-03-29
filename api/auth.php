@@ -82,7 +82,10 @@ function api_auth_login(): void {
     respondJson(['error' => 'Kullanıcı pasif'], 403);
   }
 
-  if (!hash_equals((string)$user['sifreHash'], $sifreHash)) {
+  // DB'de SHA2() ile eklenmiş büyük harfli hex ile JS/PHP hash('sha256') küçük harf uyumu
+  $dbHash = strtolower(trim((string)$user['sifreHash']));
+  $gelenHash = strtolower(trim($sifreHash));
+  if (strlen($dbHash) !== strlen($gelenHash) || !hash_equals($dbHash, $gelenHash)) {
     respondJson(['error' => 'Kullanıcı adı veya şifre hatalı'], 401);
   }
 

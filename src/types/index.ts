@@ -97,7 +97,15 @@ export interface Sporcu {
     lisansNo?: string;
     sigorta?: string | null;
   };
-  durum: 'Aktif' | 'Pasif';
+  /** Aktif/Pasif: işlemde; Ayrıldı: listeden düşer, aidat geçmişi korunur */
+  durum: 'Aktif' | 'Pasif' | 'Ayrıldı';
+  /** durum=Ayrıldı iken doldurulur — muhasebe silinmez */
+  silinmeBilgisi?: {
+    tarih: string;
+    kaynak: 'kendi' | 'yonetici';
+  };
+  /** Son kez arşivden operasyonel listeye alındığında (Ayrıldı → Aktif) */
+  yenidenKatilmaTarihi?: string;
   kayitTarihi?: string; // ISO formatında kayıt tarihi (örn: "2024-01-15T10:30:00.000Z")
 }
 

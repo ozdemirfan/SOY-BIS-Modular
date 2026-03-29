@@ -59,6 +59,9 @@ interface FormValidationResult {
   errors: ValidationErrors;
 }
 
+/** Gerçek TC toplanana kadar tüm öğrencilerde ortak kullanılabilir geçici değer (algoritma geçmez; ayrıca kabul edilir). */
+export const TC_GECICI_YER_TUTUCU = '11111111111';
+
 /**
  * TC Kimlik No doğrulama (Algoritma kontrolü)
  */
@@ -69,6 +72,10 @@ export function tcKimlikDogrula(tc: string | null | undefined): ValidationResult
   }
 
   const tcStr = tc.toString().trim();
+
+  if (tcStr === TC_GECICI_YER_TUTUCU) {
+    return { valid: true, message: '' };
+  }
 
   if (tcStr.length !== 11) {
     return { valid: false, message: 'TC Kimlik No 11 haneli olmalıdır.' };

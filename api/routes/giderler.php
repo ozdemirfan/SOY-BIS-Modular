@@ -16,7 +16,9 @@ function giderler_get_all(): void {
   foreach ($rows as $r) {
     $data = json_decode((string)$r['data'], true);
     if (!is_array($data)) $data = [];
-    $data['id'] = (int)$r['id'];
+    $colId = (int)$r['id'];
+    $jsonId = isset($data['id']) ? (int)$data['id'] : 0;
+    $data['id'] = $jsonId > 0 ? $jsonId : $colId;
     $result[] = $data;
   }
   respondJson($result);

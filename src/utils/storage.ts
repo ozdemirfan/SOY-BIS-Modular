@@ -6,6 +6,7 @@
 import type { Sporcu, Aidat, Yoklama, Gider, Antrenor, User, Ayarlar } from '../types';
 import { STORAGE_KEYS } from '../types';
 import { toast, bugunISO, suAnkiDonem, ayAdi } from './helpers';
+import { TC_GECICI_YER_TUTUCU } from './validation';
 import { apiDelete, apiGet, apiPost } from '../services/apiClient';
 
 // Hostingte env gömülmese bile shared DB modunun zorunlu çalışması için true.
@@ -277,7 +278,20 @@ export function sporcuKaydet(sporcu: Partial<Sporcu> & { id?: number }): Sporcu 
     // Güncelleme
     const index = sporcular.findIndex(s => s.id === sporcu.id);
     if (index > -1) {
-      sporcular[index] = { ...sporcular[index], ...sporcu } as Sporcu;
+      const merged = { ...sporcular[index], ...sporcu } as Record<string, unknown>;
+      if (
+        sporcu.silinmeBilgisi === undefined &&
+        Object.prototype.hasOwnProperty.call(sporcu, 'silinmeBilgisi')
+      ) {
+        delete merged.silinmeBilgisi;
+      }
+      if (
+        sporcu.yenidenKatilmaTarihi === undefined &&
+        Object.prototype.hasOwnProperty.call(sporcu, 'yenidenKatilmaTarihi')
+      ) {
+        delete merged.yenidenKatilmaTarihi;
+      }
+      sporcular[index] = merged as unknown as Sporcu;
       kaydet(STORAGE_KEYS.SPORCULAR, sporcular);
       sporcuCacheTemizle();
       const updated = sporcular[index] as Sporcu;
@@ -288,8 +302,9 @@ export function sporcuKaydet(sporcu: Partial<Sporcu> & { id?: number }): Sporcu 
     }
   } else {
     // Yeni kayıt
-    // KRİTİK DÜZELTME: ID çakışma riskini azaltmak için Date.now() + rastgele sayı kullan
-    const yeniId = Date.now() + Math.floor(Math.random() * 1000);
+    // MySQL sporcular.id / aidatlar.sporcuId kolonları INT: Date.now() değerleri taşar (2147483647).
+    // Aidat kayıtlarıyla aynı INT-güvenli ID üreticiyi kullan.
+    const yeniId = generateDbSafeId(sporcular.map(s => Number(s.id || 0)));
     const kayitTarihi = sporcu.kayitTarihi || new Date().toISOString(); // Kayıt tarihi: Verilen varsa onu kullan, yoksa şimdiki zaman
 
     // Önce spread yap, sonra ID'yi override et (spread ile ID undefined olabilir)
@@ -353,62 +368,98 @@ export function sporcuKaydet(sporcu: Partial<Sporcu> & { id?: number }): Sporcu 
 }
 
 /**
- * Sporcu sil
- * Sporcu ve ilişkili tüm verileri (aidat, yoklama) siler
- * NOT: Finansal bakiye güncellemesi yapılmıyor (aidat kayıtları silinmeden önce
- * finansal etkisi hesaplanıp bakiyeden düşülmeli - şu anki mantık korunuyor)
- * @param id - Silinecek sporcu ID'si
+ * Sporcu arşivle (ayrıldı): kayıt ve aidat/yoklama geçmişi korunur; operasyonel listeden düşer.
+ * @param kaynak - kendi: öğrenci/veli; yonetici: okul kaydı
+ */
+export function sporcuAyrildi(id: number, kaynak: 'kendi' | 'yonetici'): void {
+  const sporcu = sporcuBul(id);
+  if (!sporcu) {
+    console.warn('sporcuAyrildi: Sporcu bulunamadı:', id);
+    return;
+  }
+  sporcuKaydet({
+    ...sporcu,
+    id,
+    durum: 'Ayrıldı',
+    silinmeBilgisi: { tarih: new Date().toISOString(), kaynak },
+    yenidenKatilmaTarihi: undefined,
+  });
+}
+
+/** Arşivden çıkar: Aktif yap, ayrılış bilgisini kaldır; ödeme günü dönüş günü olur; mümkünse dönüş ayı aidat borcu yazılır. */
+export function sporcuTekrarAktifEt(id: number): void {
+  const sporcu = sporcuBul(id);
+  if (!sporcu) {
+    console.warn('sporcuTekrarAktifEt: Sporcu bulunamadı:', id);
+    return;
+  }
+  if (sporcu.durum !== 'Ayrıldı') {
+    console.warn('sporcuTekrarAktifEt: Sporcu arşivli (Ayrıldı) değil:', id);
+    return;
+  }
+
+  const now = new Date();
+  const odemeGunu = now.getDate();
+  const { ay: buAy, yil: buYil } = suAnkiDonem(now);
+
+  const odemeBilgileri = {
+    ...sporcu.odemeBilgileri,
+    odemeGunu,
+  };
+
+  sporcuKaydet({
+    ...sporcu,
+    id,
+    durum: 'Aktif',
+    silinmeBilgisi: undefined,
+    yenidenKatilmaTarihi: now.toISOString(),
+    odemeBilgileri,
+  });
+
+  const guncel = sporcuBul(id);
+  if (!guncel || guncel.odemeBilgileri?.burslu) {
+    return;
+  }
+  const aylikUcret = guncel.odemeBilgileri?.aylikUcret || 0;
+  if (aylikUcret <= 0) {
+    return;
+  }
+
+  const aidatlar = aidatlariGetir();
+  const buDonemBorcVar = aidatlar.some(
+    a =>
+      a.sporcuId === id &&
+      a.donemAy === buAy &&
+      a.donemYil === buYil &&
+      a.islem_turu === 'Aidat'
+  );
+  if (buDonemBorcVar) {
+    return;
+  }
+
+  try {
+    aidatKaydet({
+      sporcuId: id,
+      tutar: aylikUcret,
+      tarih: new Date(buYil, buAy - 1, odemeGunu).toISOString(),
+      donemAy: buAy,
+      donemYil: buYil,
+      aciklama: `${ayAdi(buAy)} ${buYil} Aylık Aidat (Yeniden kayıt)`,
+      tip: 'yeniden_katilma',
+      islem_turu: 'Aidat',
+      odemeDurumu: 'Ödenmedi',
+    } as Aidat);
+  } catch (e) {
+    console.warn('sporcuTekrarAktifEt: Dönüş ayı aidat borcu oluşturulamadı:', e);
+  }
+}
+
+/**
+ * @deprecated Eski davranış kaldırıldı. `sporcuAyrildi` kullanın.
+ * Geriye dönük çağrılar için yönetici kaynaklı arşiv.
  */
 export function sporcuSil(id: number): void {
-  try {
-    // Sporcu ID kontrolü
-    if (!id || id <= 0) {
-      console.warn('sporcuSil: Geçersiz sporcu ID:', id);
-      return;
-    }
-
-    // Sporcu listesinden kaldır
-    const sporcular = sporculariGetir().filter(s => s.id !== id);
-
-    // Kayıt başarısız olursa hata fırlatma, sadece log
-    const sporcuKayitBasarili = kaydet(STORAGE_KEYS.SPORCULAR, sporcular);
-    if (!sporcuKayitBasarili) {
-      console.error('sporcuSil: Sporcu kaydı silinemedi (LocalStorage hatası)');
-      // Devam et, diğer temizlik işlemlerini yap
-    }
-
-    // İlişkili aidat kayıtlarını temizle
-    // Aidat kayıtlarını filtrele (sporcu ID'si eşleşmeyenler)
-    const aidatlar = aidatlariGetir().filter(a => a.sporcuId !== id);
-    const aidatKayitBasarili = kaydet(STORAGE_KEYS.AIDATLAR, aidatlar);
-    if (!aidatKayitBasarili) {
-      console.error('sporcuSil: Aidat kayıtları silinemedi (LocalStorage hatası)');
-      // Devam et, diğer temizlik işlemlerini yap
-    }
-
-    // Yoklamalardaki referansları temizle
-    const yoklamalar = yoklamalariGetir();
-    yoklamalar.forEach(y => {
-      // Sporcu referansını yoklamadan kaldır
-      y.sporcular = y.sporcular.filter(s => s.id !== id);
-    });
-
-    // Boş yoklamaları da temizle (hiç sporcu kalmadıysa)
-    const temizlenmisYoklamalar = yoklamalar.filter(y => y.sporcular.length > 0);
-    const yoklamaKayitBasarili = kaydet(STORAGE_KEYS.YOKLAMALAR, temizlenmisYoklamalar);
-    if (!yoklamaKayitBasarili) {
-      console.error('sporcuSil: Yoklama kayıtları güncellenemedi (LocalStorage hatası)');
-    }
-
-    if (API_ENABLED) {
-      void apiDelete(`/sporcular/${id}`).catch(() => {});
-    }
-  } catch (error) {
-    // Hata durumunda sistemi çökertme, sadece log
-    console.error('sporcuSil: Beklenmeyen hata:', error);
-    // Kullanıcıya bilgi ver (toast kullanılamaz çünkü bu utility fonksiyonu)
-    // Ana modülde hata yönetimi yapılmalı
-  }
+  sporcuAyrildi(id, 'yonetici');
 }
 
 /**
@@ -422,9 +473,15 @@ export function sporcuBul(id: number): Sporcu | null {
  * TC ile sporcu kontrol
  */
 export function tcKontrol(tc: string, excludeId: number | null = null): boolean {
+  if (tc === TC_GECICI_YER_TUTUCU) {
+    return false;
+  }
   const sporcular = sporculariGetir();
   return sporcular.some(
-    s => s.temelBilgiler?.tcKimlik === tc && (excludeId ? s.id !== excludeId : true)
+    s =>
+      s.temelBilgiler?.tcKimlik === tc &&
+      s.durum !== 'Ayrıldı' &&
+      (excludeId ? s.id !== excludeId : true)
   );
 }
 
@@ -1074,8 +1131,9 @@ export async function kullaniciSifreDogrula(
     return null;
   }
 
-  const hash = await sifreHash(girilenSifre);
-  if (hash === kullanici.sifreHash) {
+  const hash = (await sifreHash(girilenSifre)).toLowerCase();
+  const kayitHash = (kullanici.sifreHash || '').toLowerCase();
+  if (hash === kayitHash) {
     return kullanici;
   }
 
@@ -1323,6 +1381,8 @@ if (typeof window !== 'undefined') {
     sil,
     sporculariGetir,
     sporcuKaydet,
+    sporcuAyrildi,
+    sporcuTekrarAktifEt,
     sporcuSil,
     sporcuBul,
     tcKontrol,

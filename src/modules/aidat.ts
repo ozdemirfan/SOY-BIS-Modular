@@ -1555,8 +1555,18 @@ function odemeKaydet_fn(): void {
       const toplamBorc = finansalHesap.toplamBorc;
       const toplamTahsilat = finansalHesap.toplamTahsilat;
 
-      // Kalan borç = Borç - Tahsilat (negatif olamaz)
-      const kalanBorc = Math.max(0, toplamBorc - toplamTahsilat);
+      // Bu dönem için beklenen borç: pozitif borç kaydı varsa o; yoksa (otomatik borç henüz yoksa) aylık ücret.
+      // Aksi halde toplamBorc=0 iken ödeme tamamı "fazla" sayılıp kasada çift tahsilat + gelecek aya yansıtma oluşur.
+      const burslu = sporcu.odemeBilgileri?.burslu === true;
+      const aylikUcret = sporcu.odemeBilgileri?.aylikUcret || 0;
+      const beklenenBorcDonem = burslu
+        ? toplamBorc
+        : toplamBorc > 0
+          ? toplamBorc
+          : aylikUcret;
+
+      // Kalan borç = Beklenen - Tahsilat (negatif olamaz)
+      const kalanBorc = Math.max(0, beklenenBorcDonem - toplamTahsilat);
 
       // Fazla ödeme yapılmaya çalışılıyorsa uyar (sadece tahsilat için)
       if (tutar > kalanBorc && kalanBorc > 0) {
@@ -1586,7 +1596,7 @@ function odemeKaydet_fn(): void {
         islem_turu: 'Tahsilat',
         aciklama: not || undefined, // Açıklama varsa ekle
         odemeDurumu:
-          toplamTahsilat + tutar >= toplamBorc
+          toplamTahsilat + tutar >= beklenenBorcDonem
             ? 'Ödendi'
             : toplamTahsilat + tutar > 0
               ? 'Kısmi'
@@ -1607,11 +1617,12 @@ function odemeKaydet_fn(): void {
 
       // Başarı mesajı ve fazla ödeme kontrolü
       const yeniTahsilat = toplamTahsilat + tutar;
-      const yeniKalanBorc = Math.max(0, toplamBorc - yeniTahsilat);
-      const yeniFazlaOdeme = Math.max(0, yeniTahsilat - toplamBorc);
+      const yeniKalanBorc = Math.max(0, beklenenBorcDonem - yeniTahsilat);
+      const yeniFazlaOdeme = Math.max(0, yeniTahsilat - beklenenBorcDonem);
 
       // Fazla ödeme varsa ve bu ay tam ödendiyse, fazla kısmı gelecek ayların aidatlarına dağıtarak kaydet
-      if (yeniFazlaOdeme > 0 && yeniKalanBorc <= 0) {
+      // (Yalnızca gerçekten beklenen tutar aşıldıysa; beklenenBorcDonem=0 iken dağıtma yapılmaz)
+      if (yeniFazlaOdeme > 0 && yeniKalanBorc <= 0 && beklenenBorcDonem > 0) {
         const fazlaOdemeSonuc = fazlaOdemeyiGelecekAylaraKaydet(
           sporcuId,
           yeniFazlaOdeme,

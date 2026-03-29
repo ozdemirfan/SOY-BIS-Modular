@@ -86,6 +86,17 @@ export function paraFormat(sayi: number | string | null | undefined, kisaFormat 
 }
 
 /**
+ * SOYBIS logosu (`public/logo.png` → `/logo.png`).
+ * PDF/html2canvas için tam URL; aynı kökende CORS sorunu olmaz.
+ */
+export function soybisLogoUrl(): string {
+  if (typeof window === 'undefined' || !window.location?.origin) {
+    return '/logo.png';
+  }
+  return `${window.location.origin}/logo.png`;
+}
+
+/**
  * Input için para formatı (yazarken)
  * Kullanıcı yazarken otomatik olarak binlik ayırıcı ekler
  * @param input - Formatlanacak input elementi
@@ -1025,9 +1036,11 @@ export function createBadge(type: BadgeType, text: string): string {
  * @param durum - Sporcu durumu
  * @returns HTML string
  */
-export function createDurumBadge(durum: 'Aktif' | 'Pasif'): string {
+export function createDurumBadge(durum: 'Aktif' | 'Pasif' | 'Ayrıldı'): string {
   try {
-    return durum === 'Aktif' ? createBadge('success', 'Aktif') : createBadge('danger', 'Pasif');
+    if (durum === 'Aktif') return createBadge('success', 'Aktif');
+    if (durum === 'Ayrıldı') return createBadge('info', 'Ayrıldı');
+    return createBadge('danger', 'Pasif');
   } catch (error) {
     console.error('createDurumBadge hatası:', error);
     return createBadge('info', durum);
@@ -1390,8 +1403,14 @@ if (typeof window !== 'undefined') {
  * Borç ve tahsilat hesaplama mantığını merkezileştirir
  */
 export interface FinansalHesaplama {
+  /** Brüt borç tahakkuku (Aidat + boş tür + Malzeme; pozitif satırlar) */
   toplamBorc: number;
+  /** Tahakkuk kalemi: Aidat ve türü belirtilmemiş borç satırları */
+  tahakkukAidat: number;
+  /** Tahakkuk kalemi: Malzeme borç satırları */
+  tahakkukMalzeme: number;
   toplamTahsilat: number;
+  /** Net ödenecek tutar (outstanding) */
   kalanBorc: number;
   fazlaOdeme: number;
 }
@@ -1484,26 +1503,40 @@ export function finansalHesapla(
     filtrelenmisAidatlar = filtrelenmisAidatlar.filter(a => gelecekAylarFiltresi(a, buAy, buYil));
   }
 
-  // Borçları hesapla (pozitif tutarlar: Aidat, Malzeme veya islem_turu yok)
-  const toplamBorc = filtrelenmisAidatlar
-    .filter(
-      a =>
-        (a.tutar || 0) > 0 &&
-        (a.islem_turu === 'Aidat' || a.islem_turu === 'Malzeme' || !a.islem_turu)
-    )
+  type AidatSatir = (typeof filtrelenmisAidatlar)[0];
+  const borcTahakkukuSatiri = (a: AidatSatir) =>
+    (a.tutar || 0) > 0 &&
+    (a.islem_turu === 'Aidat' || a.islem_turu === 'Malzeme' || !a.islem_turu);
+
+  /** Ödenmemiş borç satırları — kalan borç bu tutar üzerinden düşer (Ödendi satırları ödeme geçmişinde kapatılmış sayılır) */
+  const borcTahakkukuAcik = (a: AidatSatir) =>
+    borcTahakkukuSatiri(a) && (a as { odemeDurumu?: string }).odemeDurumu !== 'Ödendi';
+
+  // Brüt tahakkuk (Aidat + Malzeme + tür yok) — raporlarda "ne kesildi"
+  const tahakkukMalzeme = filtrelenmisAidatlar
+    .filter(a => borcTahakkukuSatiri(a) && a.islem_turu === 'Malzeme')
     .reduce((t, a) => t + (a.tutar || 0), 0);
+  const tahakkukAidat = filtrelenmisAidatlar
+    .filter(a => borcTahakkukuSatiri(a) && a.islem_turu !== 'Malzeme')
+    .reduce((t, a) => t + (a.tutar || 0), 0);
+  const toplamBorc = tahakkukAidat + tahakkukMalzeme;
+
+  // Açık borç tutarı (Ödendi işaretli satırlar düşülür — çift kayıt veya yalnızca işaretli kapanış)
+  const acikBorcToplam = filtrelenmisAidatlar.filter(borcTahakkukuAcik).reduce((t, a) => t + (a.tutar || 0), 0);
 
   // Tahsilatları hesapla (negatif tutarlar veya islem_turu='Tahsilat')
   const toplamTahsilat = filtrelenmisAidatlar
     .filter(a => (a.tutar || 0) < 0 || a.islem_turu === 'Tahsilat')
     .reduce((t, a) => t + Math.abs(a.tutar || 0), 0);
 
-  // Kalan borç ve fazla ödeme
-  const kalanBorc = Math.max(0, toplamBorc - toplamTahsilat);
+  // Kalan borç: açık borç − tahsilat; fazla: tahsilat − brüt tahakkuk (uluslararası ödeme fazlası tanımı)
+  const kalanBorc = Math.max(0, acikBorcToplam - toplamTahsilat);
   const fazlaOdeme = Math.max(0, toplamTahsilat - toplamBorc);
 
   return {
     toplamBorc,
+    tahakkukAidat,
+    tahakkukMalzeme,
     toplamTahsilat,
     kalanBorc,
     fazlaOdeme,

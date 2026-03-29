@@ -253,6 +253,13 @@
   border-bottom: none;
 }
 
+.rapor-stat.rapor-stat--net {
+  margin-top: 0.25rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
 .rapor-stat-label {
   font-size: 0.875rem;
   color: var(--text-secondary);
@@ -1285,6 +1292,7 @@
   .rapor-header {
     position: static;
     page-break-inside: avoid;
+    break-inside: avoid;
     margin-bottom: 1rem;
   }
 
@@ -1295,9 +1303,29 @@
 
   .rapor-card {
     page-break-inside: avoid;
+    break-inside: avoid;
     margin-bottom: 1rem;
     box-shadow: none;
     border: 1px solid #ddd;
+  }
+
+  .rapor-card-header {
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  .rapor-card-header h3 {
+    page-break-after: avoid;
+  }
+
+  .rapor-ozet-grid {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .rapor-ozet-grid .rapor-card {
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 
   .tarih-listesi {
@@ -1307,10 +1335,25 @@
 
   .tarih-item {
     page-break-inside: avoid;
+    break-inside: avoid;
   }
 
   .odeme-item {
     page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .odeme-gecmisi-list {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  #raporContent table {
+    page-break-inside: auto;
+  }
+
+  #raporContent thead {
+    display: table-header-group;
   }
 }
 

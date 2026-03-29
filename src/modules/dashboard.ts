@@ -31,6 +31,7 @@ declare global {
       kaydet?: () => void;
       duzenle?: (id: number) => void;
       sil?: (id: number) => void;
+      tekrarAktifEt?: (id: number) => void;
       durumDegistir?: (id: number) => void;
       formuTemizle?: () => void;
       listeyiGuncelle?: () => void;

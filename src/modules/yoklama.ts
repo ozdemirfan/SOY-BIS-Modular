@@ -36,7 +36,7 @@ const ENHANCED_FEATURES = {
   TOUCH_GESTURES: true, // Swipe gestures (mobil)
 };
 
-const API_ENABLED = Boolean((import.meta as any)?.env?.VITE_SOYBIS_API_BASE);
+const API_ENABLED = Boolean(import.meta.env.VITE_SOYBIS_API_BASE);
 
 interface DevamRaporuResult {
   yoklamaSayisi: number;
@@ -742,6 +742,7 @@ function createSimpleState() {
       state.length = 0;
       hideAutoSaveIndicator();
       Helpers.toast(`✅ ${changeCount} değişiklik kaydedildi`, 'success');
+      listeyiGuncelle();
     },
   };
 }
@@ -867,6 +868,8 @@ function updateSporcuUIOptimistic(sporcuId: number, durum: string): void {
   const item = document.querySelector(`[data-sporcu-id="${sporcuId}"]`);
   if (!item) return;
 
+  item.setAttribute('data-current-durum', durum);
+
   // Class'ları güncelle
   item.classList.remove('katildi', 'devamsiz', 'izinli', 'gec-geldi');
   const durumClass =
@@ -879,11 +882,30 @@ function updateSporcuUIOptimistic(sporcuId: number, durum: string): void {
           : 'gec-geldi';
   item.classList.add(durumClass);
 
-  // Badge güncelle
+  // Badge güncelle (listeyiGuncelle ile aynı sınıf adları)
   const badge = item.querySelector('.devam-durum');
   if (badge) {
     badge.textContent = durum.toUpperCase().replace('-', ' ');
-    badge.className = `devam-durum devam-${durum}`;
+    badge.className = `devam-durum ${
+      durum === 'var' ? 'devam-var' : durum === 'yok' ? 'devam-yok' : 'devam-izin'
+    }`;
+  }
+
+  // Tek toggle butonu: VAR iken YOK, YOK iken VAR gösterilmeli (listeyiGuncelle ile uyumlu)
+  const toggleBtn = item.querySelector('.btn-toggle') as HTMLButtonElement | null;
+  if (toggleBtn) {
+    const yeniDurum: 'var' | 'yok' = durum === 'var' ? 'yok' : 'var';
+    const toggleText = durum === 'var' ? 'YOK' : 'VAR';
+    const toggleClass = durum === 'var' ? 'btn-danger' : 'btn-success';
+    toggleBtn.className = `btn btn-toggle ${toggleClass}`;
+    toggleBtn.textContent = toggleText;
+    toggleBtn.setAttribute('data-current', durum);
+    toggleBtn.onclick = () => {
+      (window as unknown as { Yoklama?: { durumKaydet: typeof durumKaydet } }).Yoklama?.durumKaydet(
+        sporcuId,
+        yeniDurum
+      );
+    };
   }
 
   // Animasyon
@@ -1701,8 +1723,8 @@ export function qrYazdirBaslat(): void {
 
     // Filtreleme: Tüm Gruplar (all) seçiliyse hepsini al, değilse sadece seçili grubu
     const sporcular = allSporcular.filter((s: any) => {
-      // Pasif olmayanları dahil et (Aktif veya undefined)
-      const aktifMi = s.durum !== 'Pasif';
+      // Pasif ve arşivlenmişleri hariç tut
+      const aktifMi = s.durum !== 'Pasif' && s.durum !== 'Ayrıldı';
 
       // Grup filtresi: all ise hepsini al
       if (grup === 'all') {

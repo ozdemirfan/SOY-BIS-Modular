@@ -23,6 +23,9 @@ declare module 'html2pdf.js' {
     };
     pagebreak?: {
       mode?: string[];
+      avoid?: string[];
+      before?: string | string[];
+      after?: string | string[];
     };
   }
 

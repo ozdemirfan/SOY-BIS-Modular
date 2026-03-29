@@ -15,9 +15,8 @@ const CURRENT_USER_KEY = 'soybis_aktifKullanici';
 const ACTIVE_VIEW_KEY = 'soybis_aktifView';
 
 function apiBaseUrl(): string {
-  // Vite build sırasında gömülür; production’da set edilmelidir.
-  // Set edilmezse /api (default) kabul ediyoruz.
-  const envBase = (import.meta as any)?.env?.VITE_SOYBIS_API_BASE;
+  // Vite build sırasında gömülür; set edilmezse /api. import.meta.env doğrudan kullanılmalı (Vite gömme).
+  const envBase = import.meta.env.VITE_SOYBIS_API_BASE;
   const base = typeof envBase === 'string' ? envBase : '';
   return base.trim().length > 0 ? base.trim() : '/api';
 }

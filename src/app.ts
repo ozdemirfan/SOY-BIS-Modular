@@ -200,6 +200,8 @@ function navigasyonEventleri(): void {
  * @param ilkBaslatma - İlk başlatma mı (input temizleme yapılmasın)
  */
 function viewGoster(viewId: string, ilkBaslatma = false): void {
+  const oncekiView = state.aktifView;
+
   // Yetki kontrolü
   const kullanici = Auth.aktifKullanici();
   if (!kullanici) {
@@ -488,6 +490,24 @@ function viewGoster(viewId: string, ilkBaslatma = false): void {
         typeof (window.Sporcu as any).formuTemizle === 'function'
       ) {
         (window.Sporcu as any).formuTemizle();
+      }
+
+      // Sporcu listesi filtreleri: (1) listeden çıkınca (2) başka sayfadan listeye girince
+      // Sadece (1) yetmediği oluyor: tekrar listeye dönünce select eski kaldığı için viewGuncellemesi yanlış filtreyle çiziyordu.
+      // viewGuncellemeleri() bu bloktan sonra çalıştığı için sıfırlama burada senkron kalmalı.
+      if (
+        typeof window !== 'undefined' &&
+        window.Sporcu &&
+        typeof (window.Sporcu as { listeFiltreleriniSifirla?: () => void }).listeFiltreleriniSifirla ===
+          'function'
+      ) {
+        const spListReset = (window.Sporcu as { listeFiltreleriniSifirla: () => void })
+          .listeFiltreleriniSifirla;
+        const listedenCikis = oncekiView === 'sporcu-listesi' && viewId !== 'sporcu-listesi';
+        const listeyeGiris = viewId === 'sporcu-listesi' && oncekiView !== 'sporcu-listesi';
+        if (listedenCikis || listeyeGiris) {
+          spListReset();
+        }
       }
 
       // Aidat modülü filtre sıfırlama

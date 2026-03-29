@@ -6,6 +6,23 @@
 import * as Helpers from '../utils/helpers';
 import * as Storage from '../utils/storage';
 import type { Sporcu } from '../types';
+import {
+  applyHtml2PdfAvoidSpacers,
+  buildExcelHeaderRows,
+  buildReportDocumentMeta,
+  PDF_EXPORT_MARGIN_MM,
+  pdfExportRootWidthMm,
+  PDF_HTML2PDF_PAGE_BREAK,
+  createPdfExportLoadingOverlay,
+  detachPdfExportUi,
+  HTML2PDF_CANVAS_SCALE,
+  preloadLogoForPdf,
+  reportEscapeHtml,
+  REPORT_PDF_STYLES,
+  stylePdfExportCaptureRoot,
+  yieldUntilPaint,
+  runWithHtml2CanvasWillReadFrequentlyPatch,
+} from '../utils/reportExport';
 
 // Global window objesi için type declaration
 declare global {
@@ -417,7 +434,8 @@ function sporcuRaporu(container: HTMLElement): void {
         <ul class="rapor-list">
           <li><span class="rapor-label">Toplam Sporcu</span> <span class="rapor-deger">${sporcular.length}</span></li>
           <li><span class="rapor-label">Aktif Sporcu</span> <span class="rapor-deger financial-positive">${sporcular.filter(s => s.durum === 'Aktif').length}</span></li>
-          <li><span class="rapor-label">Pasif Sporcu</span> <span class="rapor-deger financial-negative">${sporcular.filter(s => s.durum !== 'Aktif').length}</span></li>
+          <li><span class="rapor-label">Pasif Sporcu</span> <span class="rapor-deger financial-negative">${sporcular.filter(s => s.durum === 'Pasif').length}</span></li>
+          <li><span class="rapor-label">Ayrıldı (arşiv)</span> <span class="rapor-deger">${sporcular.filter(s => s.durum === 'Ayrıldı').length}</span></li>
           <li><span class="rapor-label">Burslu Sporcu</span> <span class="rapor-deger">${sporcular.filter(s => s.odemeBilgileri?.burslu).length}</span></li>
         </ul>
       </div>
@@ -538,15 +556,8 @@ function pdfIndir(raporIcerik: HTMLElement): void {
   // Rapor bilgilerini topla
   const raporBaslik = raporIcerik.querySelector('h2')?.textContent?.trim() || 'Genel Rapor';
   const baslikTemiz = raporBaslik.replace(/<[^>]*>/g, '');
-  const simdi = new Date();
-  const tarih = simdi.toLocaleDateString('tr-TR', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    weekday: 'long',
-  });
-  const saat = simdi.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-  const raporNo = `RPT-${simdi.getFullYear()}${String(simdi.getMonth() + 1).padStart(2, '0')}${String(simdi.getDate()).padStart(2, '0')}-${String(Date.now()).slice(-6)}`;
+  const docMeta = buildReportDocumentMeta();
+  const logoSrc = Helpers.soybisLogoUrl();
 
   // Mevcut DOM'u kopyala ve temizle
   const raporClone = raporIcerik.cloneNode(true) as HTMLElement;
@@ -649,18 +660,15 @@ function pdfIndir(raporIcerik: HTMLElement): void {
     console.warn('⚠️ PDF: Veri toplama başarısız, DOM direkt kullanılıyor...');
     // Mevcut içeriği direkt kullan
     const tempDiv = document.createElement('div');
-    tempDiv.style.position = 'fixed';
-    tempDiv.style.top = '0';
-    tempDiv.style.left = '0';
-    tempDiv.style.width = '210mm';
+    tempDiv.style.width = pdfExportRootWidthMm(PDF_EXPORT_MARGIN_MM);
     tempDiv.style.background = '#ffffff';
-    tempDiv.style.zIndex = '99999';
     tempDiv.style.overflow = 'visible';
     tempDiv.style.padding = '20mm 15mm';
     tempDiv.style.fontFamily = "'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
     tempDiv.style.fontSize = '10pt';
     tempDiv.style.color = '#1a202c';
     tempDiv.style.lineHeight = '1.6';
+    stylePdfExportCaptureRoot(tempDiv);
 
     // Header ekle
     const header = document.createElement('div');
@@ -668,10 +676,22 @@ function pdfIndir(raporIcerik: HTMLElement): void {
     header.style.paddingBottom = '15px';
     header.style.marginBottom = '25px';
     header.innerHTML = `
-      <div style="text-align: center;">
-        <div style="font-size: 22pt; font-weight: 700; color: #1a365d; margin-bottom: 5px;">SOY-BIS</div>
-        <div style="font-size: 12pt; color: #4a5568; margin-bottom: 8px;">${baslikTemiz}</div>
-        <div style="font-size: 9pt; color: #718096;">Rapor No: ${raporNo} | ${tarih} ${saat}</div>
+      <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 3px solid #0f172a;">
+        <div style="display: flex; align-items: center; gap: 14px;">
+          <img src="${logoSrc}" alt="SOYBIS" width="52" height="52" style="object-fit: contain;" crossorigin="anonymous" />
+          <div>
+            <div style="font-size: 11pt; font-weight: 700; letter-spacing: 0.04em; color: #0f172a;">SOYBIS</div>
+            <div style="font-size: 8.5pt; color: #475569;">Spor Okulları Yönetim Bilgi Sistemi</div>
+          </div>
+        </div>
+        <div style="border: 1px solid #cbd5e1; border-radius: 4px; padding: 8px 12px; background: #f8fafc; font-size: 7.5pt; line-height: 1.5; color: #334155;">
+          <div><strong style="color:#0f172a;">Belge no</strong> ${reportEscapeHtml(docMeta.referenceId)}</div>
+          <div><strong style="color:#0f172a;">Tarih</strong> ${reportEscapeHtml(docMeta.dateDisplayTr)}</div>
+          <div><strong style="color:#0f172a;">UTC</strong> ${reportEscapeHtml(docMeta.iso8601Utc)}</div>
+        </div>
+      </div>
+      <div style="margin-top: 12px;">
+        <div style="font-size: 15pt; font-weight: 700; color: #0f172a;">${reportEscapeHtml(baslikTemiz)}</div>
       </div>
     `;
     tempDiv.appendChild(header);
@@ -688,374 +708,116 @@ function pdfIndir(raporIcerik: HTMLElement): void {
     footer.style.fontSize = '8pt';
     footer.style.color = '#718096';
     footer.innerHTML = `
-      <div>SOY-BIS v3.0 - Spor Okulları Yönetim Bilgi Sistemi</div>
-      <div>Bu rapor elektronik ortamda oluşturulmuştur ve yasal geçerliliğe sahiptir.</div>
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;font-size:7.5pt;color:#64748b;border-top:1px solid #cbd5e1;padding-top:12px;margin-top:16px;">
+        <div><strong style="color:#0f172a;">SOYBIS</strong> · Yalnızca kurum içi kullanım / Internal use only</div>
+        <div style="font-family:ui-monospace,monospace;font-size:7pt;">${reportEscapeHtml(docMeta.iso8601Utc)}</div>
+      </div>
     `;
     tempDiv.appendChild(footer);
 
     document.body.appendChild(tempDiv);
+    const pdfOverlay = createPdfExportLoadingOverlay();
+    document.body.appendChild(pdfOverlay);
 
-    // Render bekle ve PDF oluştur
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        const opt = {
-          margin: 0,
-          filename: `SOYBIS_Report_${baslikTemiz.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: {
-            scale: 2,
-            useCORS: true,
-            letterRendering: true,
-            logging: false,
-            width: 794,
-            height: tempDiv.scrollHeight,
-          },
-          jsPDF: {
-            unit: 'mm',
-            format: 'a4',
-            orientation: 'portrait',
-            compress: true,
-          },
-          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-        };
+    void (async () => {
+      await yieldUntilPaint();
+      await preloadLogoForPdf(logoSrc);
+      await yieldUntilPaint();
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          void (async () => {
+            applyHtml2PdfAvoidSpacers(tempDiv);
+            const w = Math.max(1, tempDiv.scrollWidth || 794);
+            const h = Math.max(1, tempDiv.scrollHeight || 1200);
+            const opt = {
+              margin: 0,
+              filename: `SOYBIS_Report_${baslikTemiz.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+              image: { type: 'jpeg', quality: 0.98 },
+              html2canvas: {
+                scale: HTML2PDF_CANVAS_SCALE,
+                useCORS: true,
+                letterRendering: true,
+                logging: false,
+                width: w,
+                height: h,
+                windowWidth: w,
+                windowHeight: h,
+              },
+              jsPDF: {
+                unit: 'mm',
+                format: 'a4',
+                orientation: 'portrait',
+                compress: true,
+              },
+              pagebreak: { ...PDF_HTML2PDF_PAGE_BREAK },
+            };
 
-        (window as any)
-          .html2pdf()
-          .set(opt)
-          .from(tempDiv)
-          .save()
-          .then(() => {
-            document.body.removeChild(tempDiv);
-            Helpers.toast('PDF başarıyla indirildi!', 'success');
-          })
-          .catch((error: Error) => {
-            console.error('PDF oluşturma hatası:', error);
-            document.body.removeChild(tempDiv);
-            Helpers.toast('PDF oluşturulurken hata oluştu!', 'error');
-          });
-      }, 800);
-    });
+            await yieldUntilPaint();
+
+            try {
+              await runWithHtml2CanvasWillReadFrequentlyPatch(() =>
+                (window as any).html2pdf().set(opt).from(tempDiv).save()
+              );
+              detachPdfExportUi(tempDiv, pdfOverlay);
+              Helpers.toast('PDF başarıyla indirildi!', 'success');
+            } catch (error: unknown) {
+              console.error('PDF oluşturma hatası:', error);
+              detachPdfExportUi(tempDiv, pdfOverlay);
+              Helpers.toast('PDF oluşturulurken hata oluştu!', 'error');
+            }
+          })();
+        });
+      });
+    })();
     return;
   }
 
-  // Profesyonel PDF HTML template
   const pdfHTML = `
-    <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="tr">
-    <head>
-      <meta charset="UTF-8">
+<head>
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${baslikTemiz} - SOY-BIS Raporu</title>
-      <style>
-    @page {
-      size: A4;
-      margin: 0;
-    }
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    body {
-      font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-      font-size: 10pt;
-      line-height: 1.5;
-      color: #1a202c;
-      background: #ffffff;
-      padding: 0;
-    }
-    .pdf-page {
-      width: 210mm;
-      min-height: 297mm;
-      background: #ffffff;
-      position: relative;
-      display: flex;
-      flex-direction: column;
-    }
-    /* CV-Style Header - Kompakt */
-    .pdf-header {
-      background: linear-gradient(135deg, #1a365d 0%, #2d3748 100%);
-      color: #ffffff;
-      padding: 10mm 20mm 8mm 20mm;
-      position: relative;
-      overflow: hidden;
-    }
-    .pdf-header::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      right: 0;
-      width: 120px;
-      height: 120px;
-      background: rgba(196, 92, 62, 0.1);
-      border-radius: 50%;
-      transform: translate(30%, -30%);
-    }
-    .pdf-header-content {
-      position: relative;
-      z-index: 1;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .pdf-header-left {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .pdf-logo-area {
-      width: 50px;
-      height: 50px;
-      background: rgba(255, 255, 255, 0.15);
-      border: 2px solid rgba(255, 255, 255, 0.3);
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 24px;
-      backdrop-filter: blur(10px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-      flex-shrink: 0;
-    }
-    .pdf-header-text {
-      flex: 1;
-    }
-    .pdf-title {
-      font-size: 18pt;
-      font-weight: 800;
-      color: #ffffff;
-      margin-bottom: 2px;
-      letter-spacing: -0.5px;
-      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-      line-height: 1.1;
-    }
-    .pdf-subtitle {
-      font-size: 9pt;
-      color: rgba(255, 255, 255, 0.9);
-      font-weight: 400;
-      line-height: 1.2;
-    }
-    .pdf-header-right {
-      text-align: right;
-      font-size: 8pt;
-      color: rgba(255, 255, 255, 0.85);
-      line-height: 1.4;
-      flex-shrink: 0;
-    }
-    .pdf-header-right strong {
-      color: #ffffff;
-      font-weight: 600;
-      display: block;
-      margin-bottom: 0px;
-    }
-    .pdf-meta {
-      font-size: 9pt;
-      color: #718096;
-      line-height: 1.6;
-    }
-    .pdf-meta strong {
-      color: #2d3748;
-      font-weight: 600;
-    }
-    /* Content Area */
-    .pdf-content {
-      padding: 20mm;
-      flex: 1;
-    }
-    /* CV-Style Section - Page Break Optimized */
-    .pdf-section {
-      margin-bottom: 25px;
-      page-break-inside: avoid;
-      break-inside: avoid;
-      orphans: 3;
-      widows: 3;
-    }
-    .pdf-section-title {
-      font-size: 16pt;
-      font-weight: 700;
-      color: #1a365d;
-      margin-bottom: 12px;
-      padding-bottom: 8px;
-      border-bottom: 3px solid #c45c3e;
-      position: relative;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      page-break-after: avoid;
-      break-after: avoid;
-    }
-    .pdf-section-title + * {
-      page-break-before: avoid;
-      break-before: avoid;
-    }
-    .pdf-section-title::before {
-      content: '';
-      width: 5px;
-      height: 24px;
-      background: linear-gradient(180deg, #c45c3e 0%, #e07b5a 100%);
-      border-radius: 3px;
-      box-shadow: 0 2px 4px rgba(196, 92, 62, 0.3);
-    }
-    .pdf-table {
-      width: 100%;
-      border-collapse: separate;
-      border-spacing: 0;
-      margin-bottom: 20px;
-      background: #ffffff;
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-    }
-    .pdf-table thead {
-      background: linear-gradient(135deg, #1a365d 0%, #2d3748 100%);
-      color: #ffffff;
-    }
-    .pdf-table th {
-      padding: 14px 16px;
-      text-align: left;
-      font-weight: 600;
-      font-size: 9.5pt;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      border-right: 1px solid rgba(255, 255, 255, 0.15);
-    }
-    .pdf-table th:first-child {
-      padding-left: 20px;
-    }
-    .pdf-table th:last-child {
-      border-right: none;
-      padding-right: 20px;
-    }
-    .pdf-table td {
-      padding: 14px 16px;
-      border-bottom: 1px solid #f0f4f8;
-      font-size: 10pt;
-      transition: background 0.2s;
-    }
-    .pdf-table td:first-child {
-      padding-left: 20px;
-    }
-    .pdf-table td:last-child {
-      padding-right: 20px;
-    }
-    .pdf-table tbody tr {
-      transition: background 0.2s;
-    }
-    .pdf-table tbody tr:nth-child(even) {
-      background: #f8fafc;
-    }
-    .pdf-table tbody tr:hover {
-      background: #f0f7ff;
-    }
-    .pdf-table tbody tr:last-child td {
-      border-bottom: none;
-    }
-    .pdf-label {
-      font-weight: 600;
-      color: #2d3748;
-      width: 40%;
-    }
-    .pdf-value {
-      color: #1a365d;
-      font-weight: 500;
-    }
-    .pdf-value.positive {
-      color: #38a169;
-      font-weight: 600;
-    }
-    .pdf-value.negative {
-      color: #e53e3e;
-      font-weight: 600;
-    }
-    /* Footer */
-    .pdf-footer {
-      background: #f8fafc;
-      border-top: 2px solid #e2e8f0;
-      padding: 12mm 20mm;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 8pt;
-      color: #718096;
-      margin-top: auto;
-    }
-    .pdf-footer-left {
-      text-align: left;
-      line-height: 1.6;
-    }
-    .pdf-footer-right {
-      text-align: right;
-      line-height: 1.6;
-    }
-    .pdf-page-number {
-      font-weight: 700;
-      color: #4a5568;
-      font-size: 9pt;
-    }
-    .pdf-footer-brand {
-      font-weight: 600;
-      color: #1a365d;
-    }
-    /* Print optimizations - Prevent orphaned content */
-    @media print {
-      .pdf-page {
-        page-break-after: always;
-      }
-      .pdf-page:last-child {
-        page-break-after: auto;
-      }
-      .pdf-table {
-        page-break-inside: avoid;
-        break-inside: avoid;
-      }
-      .pdf-table thead {
-        display: table-header-group;
-      }
-      .pdf-table tbody tr {
-        page-break-inside: avoid;
-        break-inside: avoid;
-      }
-      .pdf-table tbody tr:first-child {
-        page-break-before: avoid;
-        break-before: avoid;
-      }
-    }
-      </style>
-    </head>
-    <body>
+  <title>${reportEscapeHtml(baslikTemiz)} — SOYBIS</title>
+  <style>${REPORT_PDF_STYLES}</style>
+</head>
+<body>
   <div class="pdf-page">
-    <!-- CV-Style Header -->
-    <div class="pdf-header">
-      <div class="pdf-header-content">
-        <div class="pdf-header-left">
-          <div class="pdf-logo-area">⚽</div>
-          <div class="pdf-header-text">
-            <div class="pdf-title">SOY-BIS</div>
-            <div class="pdf-subtitle">Spor Okulları Yönetim Bilgi Sistemi</div>
+    <div class="pdf-letterhead">
+      <div class="pdf-letterhead-row">
+        <div class="pdf-brand">
+          <div class="pdf-logo-box">
+            <img src="${logoSrc}" alt="SOYBIS" width="52" height="52" loading="eager" crossorigin="anonymous" />
+          </div>
+          <div>
+            <div class="pdf-org-name">SOYBIS</div>
+            <div class="pdf-org-tagline">Spor Okulları Yönetim Bilgi Sistemi</div>
+          </div>
+        </div>
+        <div class="pdf-doc-control">
+          <div><strong>Belge no</strong> ${reportEscapeHtml(docMeta.referenceId)}</div>
+          <div><strong>Oluşturma</strong> ${reportEscapeHtml(docMeta.dateDisplayTr)}</div>
+          <div><strong>Saat</strong> ${reportEscapeHtml(docMeta.timeDisplayTr)}</div>
+          <div><strong>Saat dilimi</strong> ${reportEscapeHtml(docMeta.timezoneLabel)}</div>
+          <div><strong>UTC</strong> ${reportEscapeHtml(docMeta.iso8601Utc)}</div>
+        </div>
       </div>
-        </div>
-        <div class="pdf-header-right">
-          <div><strong>Rapor No</strong> ${raporNo}</div>
-          <div><strong>Tarih</strong> ${tarih}</div>
-          <div><strong>Saat</strong> ${saat}</div>
-          <div><strong>Tür</strong> ${baslikTemiz}</div>
-        </div>
+      <div class="pdf-report-title-block">
+        <div class="pdf-h1">${reportEscapeHtml(baslikTemiz)}</div>
+        <div class="pdf-h1-sub">Yönetim özeti · Bilgilendirme amaçlıdır · Management summary · For information purposes only</div>
       </div>
     </div>
-
-    <!-- Content -->
     <div class="pdf-content">
       ${kartlar
         .map(
-          (kart, index) => `
+          kart => `
         <div class="pdf-section">
-          <div class="pdf-section-title">${kart.baslik}</div>
+          <div class="pdf-h2">${reportEscapeHtml(kart.baslik)}</div>
           <table class="pdf-table">
             <thead>
               <tr>
-                <th>Açıklama</th>
-                <th>Değer</th>
+                <th>Alan / Field</th>
+                <th>Değer / Value</th>
               </tr>
             </thead>
             <tbody>
@@ -1063,8 +825,8 @@ function pdfIndir(raporIcerik: HTMLElement): void {
                 .map(
                   v => `
                 <tr>
-                  <td class="pdf-label">${v.label}</td>
-                  <td class="pdf-value ${v.tip === 'positive' ? 'positive' : v.tip === 'negative' ? 'negative' : ''}">${v.deger}</td>
+                  <td class="pdf-td-label">${reportEscapeHtml(v.label)}</td>
+                  <td class="pdf-td-value ${v.tip === 'positive' ? 'positive' : v.tip === 'negative' ? 'negative' : ''}">${reportEscapeHtml(v.deger)}</td>
                 </tr>
               `
                 )
@@ -1076,18 +838,15 @@ function pdfIndir(raporIcerik: HTMLElement): void {
         )
         .join('')}
     </div>
-
-    <!-- Footer -->
     <div class="pdf-footer">
       <div class="pdf-footer-left">
-        <div class="pdf-footer-brand">SOY-BIS v3.0</div>
-        <div>Spor Okulları Yönetim Bilgi Sistemi</div>
-        <div style="margin-top: 4px; font-size: 7.5pt; color: #a0aec0;">Bu rapor elektronik ortamda oluşturulmuştur ve yasal geçerliliğe sahiptir.</div>
+        <div class="pdf-footer-title">SOYBIS · Sürüm 3.x</div>
+        <div>Gizlilik: yalnızca yetkili kullanıcılar ve kurum içi kullanım. / Confidential: internal use only.</div>
+        <div class="pdf-footer-iso">${reportEscapeHtml(docMeta.iso8601Utc)}</div>
       </div>
       <div class="pdf-footer-right">
-        <div class="pdf-page-number">Sayfa 1</div>
-        <div>${tarih}</div>
-        <div style="margin-top: 4px; font-size: 7.5pt; color: #a0aec0;">${saat}</div>
+        <div><strong>Sayfa</strong> 1 / 1</div>
+        <div>${reportEscapeHtml(docMeta.dateDisplayTr)}</div>
       </div>
     </div>
   </div>
@@ -1097,69 +856,74 @@ function pdfIndir(raporIcerik: HTMLElement): void {
 
   // Geçici container oluştur
   const tempDiv = document.createElement('div');
-  tempDiv.style.position = 'fixed';
-  tempDiv.style.top = '0';
-  tempDiv.style.left = '0';
-  tempDiv.style.width = '210mm';
+  tempDiv.style.width = pdfExportRootWidthMm(PDF_EXPORT_MARGIN_MM);
   tempDiv.style.background = '#ffffff';
-  tempDiv.style.zIndex = '99999';
   tempDiv.style.overflow = 'visible';
   tempDiv.innerHTML = pdfHTML;
+  stylePdfExportCaptureRoot(tempDiv);
   document.body.appendChild(tempDiv);
+  const pdfOverlay = createPdfExportLoadingOverlay();
+  document.body.appendChild(pdfOverlay);
 
-  // Render bekle - Daha uzun süre bekle
-  requestAnimationFrame(() => {
-    setTimeout(() => {
-      // Element'in render edildiğinden emin ol
-      const height = tempDiv.scrollHeight || tempDiv.offsetHeight || 1200;
-      const width = tempDiv.scrollWidth || tempDiv.offsetWidth || 794;
+  void (async () => {
+    await yieldUntilPaint();
+    await preloadLogoForPdf(logoSrc);
+    await yieldUntilPaint();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        void (async () => {
+          applyHtml2PdfAvoidSpacers(tempDiv, PDF_EXPORT_MARGIN_MM);
 
-      console.log('📄 PDF oluşturuluyor...', {
-        width,
-        height,
-        kartSayisi: kartlar.length,
-        innerHTMLLength: tempDiv.innerHTML.length,
+          const height = Math.max(1, tempDiv.scrollHeight || tempDiv.offsetHeight || 1200);
+          const width = Math.max(1, tempDiv.scrollWidth || tempDiv.offsetWidth || 794);
+
+          console.log('📄 PDF oluşturuluyor...', {
+            width,
+            height,
+            kartSayisi: kartlar.length,
+            innerHTMLLength: tempDiv.innerHTML.length,
+          });
+
+          const opt = {
+            margin: [...PDF_EXPORT_MARGIN_MM],
+            filename: `SOYBIS_Report_${baslikTemiz.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: {
+              scale: HTML2PDF_CANVAS_SCALE,
+              useCORS: true,
+              letterRendering: true,
+              logging: false,
+              width,
+              height,
+              windowWidth: width,
+              windowHeight: height,
+            },
+            jsPDF: {
+              unit: 'mm',
+              format: 'a4',
+              orientation: 'portrait',
+              compress: true,
+            },
+            pagebreak: { ...PDF_HTML2PDF_PAGE_BREAK },
+          };
+
+          await yieldUntilPaint();
+
+          try {
+            await runWithHtml2CanvasWillReadFrequentlyPatch(() =>
+              (window as any).html2pdf().set(opt).from(tempDiv).save()
+            );
+            detachPdfExportUi(tempDiv, pdfOverlay);
+            Helpers.toast('PDF başarıyla indirildi!', 'success');
+          } catch (error: unknown) {
+            console.error('PDF oluşturma hatası:', error);
+            detachPdfExportUi(tempDiv, pdfOverlay);
+            Helpers.toast('PDF oluşturulurken hata oluştu!', 'error');
+          }
+        })();
       });
-
-      const opt = {
-        margin: 0,
-        filename: `SOYBIS_Report_${baslikTemiz.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          letterRendering: true,
-          logging: false,
-          width: width,
-          height: height,
-          windowWidth: width,
-          windowHeight: height,
-        },
-        jsPDF: {
-          unit: 'mm',
-          format: 'a4',
-          orientation: 'portrait',
-          compress: true,
-        },
-        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-      };
-
-      (window as any)
-        .html2pdf()
-        .set(opt)
-        .from(tempDiv)
-        .save()
-        .then(() => {
-          document.body.removeChild(tempDiv);
-          Helpers.toast('PDF başarıyla indirildi!', 'success');
-        })
-        .catch((error: Error) => {
-          console.error('PDF oluşturma hatası:', error);
-          document.body.removeChild(tempDiv);
-          Helpers.toast('PDF oluşturulurken hata oluştu!', 'error');
-        });
-    }, 1000); // Daha uzun bekleme süresi
-  });
+    });
+  })();
 }
 
 /**
@@ -1172,37 +936,39 @@ function excelIndir(raporIcerik: HTMLElement): void {
   }
 
   const workbook = window.XLSX.utils.book_new();
-  const data: unknown[][] = [];
-
-  // Başlık
   const raporBaslik = raporIcerik.querySelector('h2');
   const baslikText = raporBaslik?.textContent?.trim() || 'RAPOR';
-  data.push([baslikText.replace(/<[^>]*>/g, ''), '', '']);
-  data.push(['Oluşturulma Tarihi', new Date().toLocaleDateString('tr-TR'), '']);
-  data.push([]);
+  const baslikTemizExcel = baslikText.replace(/<[^>]*>/g, '');
+  const data: unknown[][] = [...buildExcelHeaderRows(baslikTemizExcel)];
 
-  // Her kart için
   raporIcerik.querySelectorAll('.rapor-card').forEach(card => {
     const baslikElement = card.querySelector('h3');
     const baslik = baslikElement?.textContent?.trim() || 'Bölüm';
     const baslikTextClean = baslik.replace(/<[^>]*>/g, '');
-    data.push(['--- ' + baslikTextClean + ' ---', '', '']);
+    data.push(['Bölüm / Section', baslikTextClean, '', '']);
 
     card.querySelectorAll('.rapor-list li').forEach(item => {
       const labelElement = item.querySelector('.rapor-label');
       const valueElement = item.querySelector('.rapor-deger');
-      const label = labelElement?.textContent?.replace(':', '').trim() || '';
-      const value = valueElement?.textContent?.trim() || '';
-
-      if (label || value) {
-        data.push([label, value, '']);
+      if (labelElement && valueElement) {
+        const label = labelElement.textContent?.replace(':', '').trim() || '';
+        const value = valueElement.textContent?.trim() || '';
+        if (label || value) {
+          data.push([label, value, '', '']);
+        }
+      } else {
+        const satir = item.textContent?.replace(/\s+/g, ' ').trim() || '';
+        if (satir) {
+          data.push([satir, '', '', '']);
+        }
       }
     });
     data.push([]);
   });
 
   const worksheet = window.XLSX.utils.aoa_to_sheet(data);
-  window.XLSX.utils.book_append_sheet(workbook, worksheet, 'SOYBIS Raporu');
+  worksheet['!cols'] = [{ wch: 44 }, { wch: 36 }, { wch: 10 }, { wch: 6 }];
+  window.XLSX.utils.book_append_sheet(workbook, worksheet, 'Rapor');
   window.XLSX.writeFile(
     workbook,
     `SOYBIS_Rapor_${new Date().toLocaleDateString('tr-TR').replace(/\./g, '-')}.xlsx`
