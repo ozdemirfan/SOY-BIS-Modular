@@ -464,22 +464,62 @@ export function $$(selector: string): NodeListOf<HTMLElement> {
 
 type ToastType = 'success' | 'error' | 'warning' | 'info';
 
+/** Aynı mesaj+tür tekrarını bastırma (API senkron uyarısı yağmurunu önler). */
+const TOAST_DEDUPE_MS = 4500;
+/** Üst üste çok toast — ekranı doldurmasın; en eski kaldırılır. */
+const TOAST_MAX_VISIBLE = 5;
+
+const toastLastShown = new Map<string, number>();
+
+function toastDedupeKey(message: string, type: ToastType): string {
+  return `${type}:${message}`;
+}
+
+function pruneToastDedupeMap(now: number): void {
+  if (toastLastShown.size <= 64) {
+    return;
+  }
+  const cutoff = now - TOAST_DEDUPE_MS * 3;
+  for (const [k, t] of toastLastShown) {
+    if (t < cutoff) {
+      toastLastShown.delete(k);
+    }
+  }
+}
+
 /**
  * Toast bildirimi göster
  * Kullanıcıya geçici bildirim mesajı gösterir
  * @param message - Gösterilecek mesaj
  * @param type - Bildirim tipi (success, error, warning, info)
  * @param duration - Gösterim süresi (milisaniye)
+ * @param bypassThrottle - true ise aynı mesaj süre kısıtına takılmaz (kritik tek seferlik uyarılar)
  */
-export function toast(message: string, type: ToastType = 'info', duration = 3000): void {
+export function toast(
+  message: string,
+  type: ToastType = 'info',
+  duration = 3000,
+  bypassThrottle = false
+): void {
   try {
-    console.log('🔔 [Toast] Toast çağrıldı:', { message, type, duration });
+    const now = Date.now();
+    if (!bypassThrottle) {
+      const key = toastDedupeKey(message, type);
+      const last = toastLastShown.get(key) ?? 0;
+      if (now - last < TOAST_DEDUPE_MS) {
+        log('debug', '[Toast] throttled (aynı mesaj):', message);
+        return;
+      }
+      toastLastShown.set(key, now);
+      pruneToastDedupeMap(now);
+    }
+
+    log('debug', '[Toast]', { message, type, duration });
     const container = $('#toastContainer');
     if (!container) {
       console.warn('❌ [Toast] #toastContainer bulunamadı');
       return;
     }
-    console.log('✅ [Toast] Container bulundu:', container);
 
     // Icon mapping
     const icons: Record<ToastType, string> = {
@@ -501,6 +541,11 @@ export function toast(message: string, type: ToastType = 'info', duration = 3000
         `,
       true
     );
+
+    const existing = container.querySelectorAll('.toast');
+    if (existing.length >= TOAST_MAX_VISIBLE) {
+      existing[0]?.remove();
+    }
 
     container.appendChild(toastEl);
 
