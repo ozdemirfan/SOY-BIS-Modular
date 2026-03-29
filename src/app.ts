@@ -20,7 +20,7 @@ import * as Rapor from './modules/rapor';
 import * as Ayarlar from './modules/ayarlar';
 import * as KullaniciYonetimi from './modules/kullanici-yonetimi';
 import * as Notification from './modules/notification';
-import { isMobile, handleResize } from './utils/responsiveLayout';
+import { isMobile } from './utils/responsiveLayout';
 import {
   splashScreenGoster,
   splashScreenKapat,
@@ -30,6 +30,17 @@ import {
 import { canAccessView, defaultViewIdForRole } from './app/viewAccess';
 import { tarihiGuncelle } from './utils/appHeaderDate';
 import { aramaKutulariniTemizle, formInputlariniTemizle } from './utils/appFormCleanup';
+import { temaDegistir, temaYonetiminiBaslat } from './app/appTheme';
+import {
+  hamburgerMenuEventleri,
+  toggleMobileMenu,
+  openMobileMenu,
+  closeMobileMenu,
+} from './app/appMobileNav';
+import { masaustuSidebarYonetimi, toggleDesktopSidebar } from './app/appDesktopSidebar';
+
+export { toggleMobileMenu, openMobileMenu, closeMobileMenu };
+export { masaustuSidebarYonetimi, toggleDesktopSidebar };
 
 // ========== TYPES & INTERFACES ==========
 
@@ -47,11 +58,6 @@ const state: AppState = {
   aktifView: 'dashboard',
   yuklendi: false,
 };
-
-// AbortController for cleanup
-let quickAmountAbortController: AbortController | null = null;
-let resizeAbortController: AbortController | null = null;
-let themeAbortController: AbortController | null = null;
 
 // ========== HELPER FUNCTIONS ==========
 // tarihiGuncelle → utils/appHeaderDate
@@ -1411,303 +1417,6 @@ function yuklendiMi(): boolean {
   return state.yuklendi;
 }
 
-// ========== MOBILE MENU ==========
-
-/**
- * Hamburger menü eventlerini bağla (Mobile)
- */
-function hamburgerMenuEventleri(): void {
-  const hamburgerBtn = Helpers.$('#hamburgerBtn');
-  const sidebar = Helpers.$('#sidebar');
-  const overlay = Helpers.$('#mobileMenuOverlay');
-  const closeBtn = Helpers.$('#sidebarCloseBtn');
-
-  if (!hamburgerBtn || !sidebar || !overlay) {
-    console.warn('hamburgerMenuEventleri: Butonlar bulunamadı', {
-      hamburgerBtn: !!hamburgerBtn,
-      sidebar: !!sidebar,
-      overlay: !!overlay,
-    });
-    return;
-  }
-
-  // Hamburger butonuna tıklama
-  if (hamburgerBtn) {
-    hamburgerBtn.addEventListener('click', function (e: Event) {
-      e.stopPropagation();
-      // Sadece mobilde çalış
-      if (isMobile()) {
-        toggleMobileMenu();
-      }
-    });
-  }
-
-  // Close butonuna tıklama
-  if (closeBtn) {
-    closeBtn.addEventListener('click', function (e: Event) {
-      e.stopPropagation();
-      // Sadece mobilde çalış
-      if (isMobile()) {
-        closeMobileMenu();
-      }
-    });
-  }
-
-  // Overlay'e tıklayınca menüyü kapat
-  if (overlay) {
-    overlay.addEventListener('click', function () {
-      // Sadece mobilde çalış
-      if (isMobile()) {
-        closeMobileMenu();
-      }
-    });
-  }
-
-  // ESC tuşu ile menüyü kapat (sadece mobilde)
-  document.addEventListener('keydown', function (e: KeyboardEvent) {
-    if (e.key === 'Escape' && isMobile() && sidebar && sidebar.classList.contains('open')) {
-      closeMobileMenu();
-    }
-  });
-
-  // Nav butonlarına tıklandığında menüyü kapat (SADECE MOBİLDE)
-  // NOT: Bu event listener'lar navigasyonEventleri() ile çakışmamalı
-  // Çünkü navigasyonEventleri() zaten tüm butonlara listener ekliyor
-  // Burada sadece mobil menüyü kapatmak için ek bir listener ekliyoruz
-  const navButtons = Helpers.$$('#mainNav button');
-  navButtons.forEach(btn => {
-    // Sadece mobil menüyü kapatmak için ek listener (navigasyonEventleri ile çakışmaz)
-    btn.addEventListener(
-      'click',
-      function () {
-        // Sadece mobilde menüyü kapat, masaüstünde sidebar açık kalmalı
-        if (isMobile()) {
-          closeMobileMenu();
-        }
-      },
-      { capture: false }
-    ); // capture: false ile navigasyonEventleri'nden sonra çalışır
-  });
-
-  // Swipe gesture (sol kenardan sağa çekince aç) - sadece mobilde
-  let touchStartX = 0;
-  let touchEndX = 0;
-
-  document.addEventListener(
-    'touchstart',
-    function (e: TouchEvent) {
-      if (!isMobile()) return;
-      if (e.changedTouches && e.changedTouches[0]) {
-        touchStartX = e.changedTouches[0].screenX;
-      }
-    },
-    { passive: true }
-  );
-
-  document.addEventListener(
-    'touchend',
-    function (e: TouchEvent) {
-      if (!isMobile()) return;
-      if (e.changedTouches && e.changedTouches[0]) {
-        touchEndX = e.changedTouches[0].screenX;
-        handleSwipeGesture();
-      }
-    },
-    { passive: true }
-  );
-
-  function handleSwipeGesture(): void {
-    if (!isMobile()) return;
-
-    const swipeThreshold = 80;
-    const swipeDistance = touchEndX - touchStartX;
-
-    // Sol kenardan sağa swipe (menü kapalıyken)
-    if (
-      touchStartX < 30 &&
-      swipeDistance > swipeThreshold &&
-      sidebar &&
-      !sidebar.classList.contains('open')
-    ) {
-      openMobileMenu();
-    }
-
-    // Sağdan sola swipe (menü açıkken)
-    if (swipeDistance < -swipeThreshold && sidebar && sidebar.classList.contains('open')) {
-      closeMobileMenu();
-    }
-  }
-}
-
-/**
- * Mobil menüyü aç/kapat
- */
-export function toggleMobileMenu(): void {
-  // Sadece mobilde çalış
-  if (!isMobile()) return;
-
-  const hamburgerBtn = Helpers.$('#hamburgerBtn');
-  const sidebar = Helpers.$('#sidebar');
-  const overlay = Helpers.$('#mobileMenuOverlay');
-
-  if (!hamburgerBtn || !sidebar || !overlay) return;
-
-  const isOpen = sidebar.classList.contains('open');
-
-  if (isOpen) {
-    closeMobileMenu();
-  } else {
-    openMobileMenu();
-  }
-}
-
-/**
- * Mobil menüyü aç
- */
-export function openMobileMenu(): void {
-  // Sadece mobilde çalış
-  if (!isMobile()) return;
-
-  const fabBtn = Helpers.$('#hamburgerBtn');
-  const sidebar = Helpers.$('#sidebar');
-  const overlay = Helpers.$('#mobileMenuOverlay');
-
-  if (!fabBtn || !sidebar || !overlay) return;
-
-  // Masaüstü class'larını temizle (çakışmayı önle)
-  sidebar.classList.remove('sidebar-closed');
-
-  fabBtn.classList.add('active');
-  fabBtn.setAttribute('aria-expanded', 'true');
-  sidebar.classList.add('open');
-  overlay.classList.add('active');
-  document.body.style.overflow = 'hidden'; // Arka plan scroll'unu engelle
-}
-
-/**
- * Mobil menüyü kapat
- */
-export function closeMobileMenu(): void {
-  // Sadece mobilde çalış
-  if (!isMobile()) return;
-
-  const fabBtn = Helpers.$('#hamburgerBtn');
-  const sidebar = Helpers.$('#sidebar');
-  const overlay = Helpers.$('#mobileMenuOverlay');
-
-  if (!fabBtn || !sidebar || !overlay) return;
-
-  fabBtn.classList.remove('active');
-  fabBtn.setAttribute('aria-expanded', 'false');
-  if (sidebar) {
-    sidebar.classList.remove('open');
-  }
-  overlay.classList.remove('active');
-  document.body.style.overflow = ''; // Scroll'u geri aç
-}
-
-// ========== DESKTOP SIDEBAR ==========
-
-/**
- * Masaüstü Sidebar Yönetimi
- * - Varsayılan açık
- * - Hamburger ile kapatılabilir
- * - Tercih localStorage'da saklanır
- */
-export function masaustuSidebarYonetimi(): void {
-  const sidebar = Helpers.$('#sidebar');
-
-  if (!sidebar) {
-    // Sidebar bulunamazsa kısa bir süre sonra tekrar dene (DOM henüz hazır olmayabilir)
-    setTimeout(() => {
-      masaustuSidebarYonetimi();
-    }, 200);
-    return;
-  }
-
-  const desktopSidebarToggle = Helpers.$('#desktopSidebarToggle');
-  const desktopMenuToggle = Helpers.$('#desktopMenuToggle');
-
-  // localStorage'dan tercih oku
-  const sidebarPref =
-    typeof localStorage !== 'undefined' ? localStorage.getItem('sidebarOpen') : null;
-  const shouldBeOpen = sidebarPref === null ? true : sidebarPref === 'true'; // Varsayılan: açık
-
-  // Tercihi uygula
-  if (shouldBeOpen) {
-    sidebar.classList.remove('sidebar-closed');
-  } else {
-    sidebar.classList.add('sidebar-closed');
-  }
-
-  // Event listener'ları sadece bir kez bağla (çift bağlantı önleme)
-  // Sidebar içindeki toggle butonu (açıkken görünür)
-  if (desktopSidebarToggle && !desktopSidebarToggle.hasAttribute('data-sidebar-listener')) {
-    desktopSidebarToggle.setAttribute('data-sidebar-listener', 'true');
-    desktopSidebarToggle.addEventListener('click', function (e: Event) {
-      e.stopPropagation();
-      toggleDesktopSidebar();
-    });
-  }
-
-  // Floating toggle butonu (kapalıyken görünür)
-  if (desktopMenuToggle && !desktopMenuToggle.hasAttribute('data-menu-listener')) {
-    desktopMenuToggle.setAttribute('data-menu-listener', 'true');
-    desktopMenuToggle.addEventListener('click', function (e: Event) {
-      e.stopPropagation();
-      toggleDesktopSidebar();
-    });
-  }
-
-  // Pencere boyutu değiştiğinde kontrol et (masaüstü/mobil geçişi)
-  let resizeTimer: ReturnType<typeof setTimeout>;
-  if (typeof window !== 'undefined') {
-    // Önce mevcut listener'ı temizle (çift bağlantı önleme)
-    const existingHandler = (window as any).__soybis_resize_handler;
-    if (existingHandler) {
-      window.removeEventListener('resize', existingHandler);
-    }
-
-    const resizeHandler = function () {
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(function () {
-        handleResize();
-      }, 100);
-    };
-
-    // Handler'ı window'a kaydet (temizleme için)
-    (window as any).__soybis_resize_handler = resizeHandler;
-
-    window.addEventListener('resize', resizeHandler);
-    // İlk yüklemede de kontrol et
-    setTimeout(() => handleResize(), 100);
-  }
-}
-
-/**
- * Masaüstü sidebar'ı aç/kapat
- */
-export function toggleDesktopSidebar(): void {
-  const sidebar = Helpers.$('#sidebar');
-  if (!sidebar) return;
-
-  const isClosed = sidebar.classList.contains('sidebar-closed');
-
-  if (isClosed) {
-    // Aç
-    sidebar.classList.remove('sidebar-closed');
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('sidebarOpen', 'true');
-    }
-  } else {
-    // Kapat
-    sidebar.classList.add('sidebar-closed');
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('sidebarOpen', 'false');
-    }
-  }
-}
-
 // ========== MAIN INITIALIZATION ==========
 
 /**
@@ -2165,104 +1874,6 @@ export function exposeModulesToWindow(): void {
     (window as any).KullaniciYonetimi = KullaniciYonetimi;
     (window as any).Notification = Notification;
     window.App = App;
-  }
-}
-
-// ========== TEMA YÖNETİMİ ==========
-
-/**
- * Tema yönetimini başlat
- */
-function temaYonetiminiBaslat(): void {
-  // Eski event listener'ı iptal et
-  if (themeAbortController) {
-    themeAbortController.abort();
-  }
-
-  // Yeni AbortController oluştur
-  themeAbortController = new AbortController();
-  const signal = themeAbortController.signal;
-
-  // localStorage'dan tema tercihini oku
-  const kayitliTema = localStorage.getItem('soybis_theme');
-  const sistemTemasi = window.matchMedia('(prefers-color-scheme: light)').matches
-    ? 'light'
-    : 'dark';
-  const tema = kayitliTema || sistemTemasi;
-
-  // Tema uygula
-  if (tema === 'light') {
-    document.body.classList.add('light-mode');
-  } else {
-    document.body.classList.remove('light-mode');
-  }
-
-  // Tema ikonunu güncelle
-  temaIkonunuGuncelle();
-
-  // Tema değiştirme butonuna event listener ekle
-  const themeToggle = Helpers.$('#themeToggle');
-  if (themeToggle) {
-    themeToggle.addEventListener('click', temaDegistir, { signal });
-  }
-
-  // Sistem teması değişikliğini dinle (sadece kullanıcı manuel değiştirmediyse)
-  if (!kayitliTema) {
-    window.matchMedia('(prefers-color-scheme: light)').addEventListener(
-      'change',
-      e => {
-        if (!localStorage.getItem('soybis_theme')) {
-          if (e.matches) {
-            document.body.classList.add('light-mode');
-          } else {
-            document.body.classList.remove('light-mode');
-          }
-          temaIkonunuGuncelle();
-        }
-      },
-      { signal }
-    );
-  }
-}
-
-/**
- * Tema değiştir
- */
-function temaDegistir(): void {
-  const isLightMode = document.body.classList.contains('light-mode');
-
-  if (isLightMode) {
-    document.body.classList.remove('light-mode');
-    localStorage.setItem('soybis_theme', 'dark');
-  } else {
-    document.body.classList.add('light-mode');
-    localStorage.setItem('soybis_theme', 'light');
-  }
-
-  temaIkonunuGuncelle();
-}
-
-/**
- * Tema ikonunu güncelle
- */
-function temaIkonunuGuncelle(): void {
-  const themeIcon = Helpers.$('#themeIcon');
-  if (!themeIcon) return;
-
-  const isLightMode = document.body.classList.contains('light-mode');
-
-  if (isLightMode) {
-    themeIcon.className = 'fa-solid fa-sun';
-    if (themeIcon.parentElement) {
-      (themeIcon.parentElement as HTMLElement).setAttribute('title', 'Koyu moda geç');
-      (themeIcon.parentElement as HTMLElement).setAttribute('aria-label', 'Koyu moda geç');
-    }
-  } else {
-    themeIcon.className = 'fa-solid fa-moon';
-    if (themeIcon.parentElement) {
-      (themeIcon.parentElement as HTMLElement).setAttribute('title', 'Aydınlık moda geç');
-      (themeIcon.parentElement as HTMLElement).setAttribute('aria-label', 'Aydınlık moda geç');
-    }
   }
 }
 
