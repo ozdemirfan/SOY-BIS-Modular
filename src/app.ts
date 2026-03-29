@@ -21,33 +21,19 @@ import * as Ayarlar from './modules/ayarlar';
 import * as KullaniciYonetimi from './modules/kullanici-yonetimi';
 import * as Notification from './modules/notification';
 import { isMobile } from './utils/responsiveLayout';
-import {
-  splashScreenGoster,
-  splashScreenKapat,
-  loginOverlayGoster,
-  loginOverlayGizle,
-} from './utils/loginSplashUi';
-import { canAccessView, defaultViewIdForRole } from './app/viewAccess';
-import { tarihiGuncelle } from './utils/appHeaderDate';
+import { canAccessView } from './app/viewAccess';
 import { aramaKutulariniTemizle, formInputlariniTemizle } from './utils/appFormCleanup';
 import { temaDegistir, temaYonetiminiBaslat } from './app/appTheme';
-import {
-  hamburgerMenuEventleri,
-  toggleMobileMenu,
-  openMobileMenu,
-  closeMobileMenu,
-} from './app/appMobileNav';
+import { toggleMobileMenu, openMobileMenu, closeMobileMenu } from './app/appMobileNav';
 import { masaustuSidebarYonetimi, toggleDesktopSidebar } from './app/appDesktopSidebar';
-import { malzemeModalEventleriniBagla } from './app/malzemeModalBridge';
-import { klavyeKisayollari } from './app/appKeyboardShortcuts';
-import { ayarlarEventleri } from './app/appSettingsEvents';
-import { loginEventleri, type LoginFlowHooks } from './app/appLoginFlow';
+import type { LoginFlowHooks } from './app/appLoginFlow';
 import {
   viewGoster as viewGosterCore,
   navIndicatorGuncelle,
   type ViewNavigationContext,
 } from './app/appViewNavigation';
 import { modulleriBaslat, tumunuGuncelle } from './app/appModulesInit';
+import { bootstrapApp } from './app/appBootstrap';
 
 export { toggleMobileMenu, openMobileMenu, closeMobileMenu };
 export { masaustuSidebarYonetimi, toggleDesktopSidebar };
@@ -441,243 +427,16 @@ function loginFlowHooks(): LoginFlowHooks {
  * Uygulamayı başlat
  */
 export async function init(): Promise<void> {
-  // Uygulama başlatılıyor
-
-  // Malzeme modal event listener'larını merkezi olarak bağla (bir kez)
-  malzemeModalEventleriniBagla();
-
-  // Body'ye koyu arka plan rengi ekle (CSS yüklenene kadar beyaz ekranı önle)
-  if (document.body) {
-    document.body.style.backgroundColor = '#0a0e27';
-    document.body.style.color = '#ffffff';
-    document.body.style.margin = '0';
-    document.body.style.padding = '0';
-  }
-
-  // Splash screen ve login overlay'i başlangıçta gizle (sayfa yüklenirken flash etmesin)
-  const splash = Helpers.$('#splashScreen');
-  if (splash) {
-    (splash as HTMLElement).style.display = 'none';
-    splash.classList.add('hidden');
-  }
-
-  const loginOverlay = Helpers.$('#loginOverlay');
-  if (loginOverlay) {
-    (loginOverlay as HTMLElement).style.display = 'none';
-    loginOverlay.classList.add('hidden');
-  }
-
-  // Tüm modal'ları başlangıçta gizle (CSS yüklenmeden önce görünmesin)
-  const modals = document.querySelectorAll('.modal');
-  modals.forEach(modal => {
-    (modal as HTMLElement).style.display = 'none';
-    (modal as HTMLElement).style.setProperty('display', 'none', 'important');
+  await bootstrapApp({
+    loginFlowHooks,
+    navigasyonEventleri,
+    rolBazliMenuGizle,
+    kullaniciBilgileriniGoster,
+    viewGoster,
+    setYuklendi: v => {
+      state.yuklendi = v;
+    },
   });
-
-  // Önce auth kontrolü yap
-  try {
-    // Sistem başlatma - varsayılan admin oluştur
-    if (typeof Storage.sistemBaslat === 'function') {
-      await Storage.sistemBaslat();
-    }
-
-    // Auth kontrolü
-    const girisYapilmis = Auth.kontrol();
-
-    if (!girisYapilmis) {
-      // Giriş yapılmamış, login overlay'i göster (CSS yüklendikten sonra)
-      requestAnimationFrame(() => {
-        loginOverlayGoster();
-        loginEventleri(loginFlowHooks());
-      });
-      return; // Uygulamayı başlatma
-    }
-
-    // Giriş yapılmış, login overlay'i kesinlikle gizle ve uygulamayı başlat
-    if (loginOverlay) {
-      (loginOverlay as HTMLElement).style.display = 'none';
-      loginOverlay.classList.add('hidden');
-      (loginOverlay as HTMLElement).style.setProperty('display', 'none', 'important');
-    }
-
-    // App container'ı göster (CSS yüklendikten sonra)
-    const appContainer = Helpers.$('.app-container');
-    if (appContainer) {
-      // CSS'in yüklenmesini bekle
-      requestAnimationFrame(() => {
-        (appContainer as HTMLElement).style.display = 'flex';
-
-        // Logo'ları göster (flash etmemesi için biraz bekle)
-        setTimeout(() => {
-          const sidebarLogo = Helpers.$('.sidebar-logo');
-          if (sidebarLogo) {
-            (sidebarLogo as HTMLImageElement).style.display = '';
-          }
-          const headerLogo = Helpers.$('.header-logo');
-          if (headerLogo) {
-            (headerLogo as HTMLImageElement).style.display = '';
-          }
-        }, 100);
-      });
-    }
-    kullaniciBilgileriniGoster();
-  } catch (error) {
-    console.error('Auth kontrolü hatası:', error);
-    loginOverlayGoster();
-    loginEventleri(loginFlowHooks());
-    return;
-  }
-
-  // Sayfa yenilendi (giriş yapılmış), splash screen'i tamamen kaldır
-  if (splash) {
-    (splash as HTMLElement).style.display = 'none';
-    splash.classList.add('hidden');
-    // Splash screen'i DOM'dan kaldır (flash etmemesi için)
-    setTimeout(() => {
-      splash.remove();
-    }, 0);
-  }
-
-  // Kayıtlı view'u kontrol et (sayfa yenilendi mi?)
-  const kayitliView =
-    typeof localStorage !== 'undefined' ? localStorage.getItem('soybis_aktifView') : null;
-
-  try {
-    // Eski verileri migrate et
-    try {
-      if (
-        typeof window !== 'undefined' &&
-        window.Storage &&
-        typeof Storage.veriMigration === 'function'
-      ) {
-        Storage.veriMigration();
-      }
-    } catch (e) {
-      console.warn('Veri migration hatası:', e);
-    }
-
-    // Tarihi güncelle
-    try {
-      tarihiGuncelle();
-    } catch (e) {
-      console.warn('Tarih güncelleme hatası:', e);
-    }
-
-    // Navigasyon eventlerini bağla
-    try {
-      navigasyonEventleri();
-    } catch (e) {
-      console.warn('Navigasyon eventleri hatası:', e);
-    }
-
-    // Rol bazlı menü gizleme
-    rolBazliMenuGizle();
-
-    // Modülleri başlat
-    modulleriBaslat();
-
-    // Ayarlar eventlerini bağla
-    try {
-      ayarlarEventleri();
-    } catch (e) {
-      console.warn('Ayarlar eventleri hatası:', e);
-    }
-
-    // Keyboard shortcuts'ları bağla
-    try {
-      klavyeKisayollari(viewGoster);
-    } catch (e) {
-      console.warn('Klavye kısayolları hatası:', e);
-    }
-
-    // Tema yönetimini başlat (sayfa yenilendiğinde de çalışsın)
-    try {
-      temaYonetiminiBaslat();
-    } catch (e) {
-      console.warn('Tema yönetimi hatası:', e);
-    }
-
-    // Hamburger menü eventlerini bağla (Mobil)
-    try {
-      hamburgerMenuEventleri();
-    } catch (e) {
-      console.warn('Hamburger menü eventleri hatası:', e);
-    }
-
-    // Masaüstü sidebar yönetimi (varsayılan açık + tercih kaydı)
-    if (typeof window !== 'undefined' && window.innerWidth >= 769) {
-      try {
-        masaustuSidebarYonetimi();
-      } catch (e) {
-        console.warn('Masaüstü sidebar yönetimi hatası:', e);
-      }
-    }
-
-    // Son görüntülenen view'u localStorage'dan al veya rol bazlı varsayılan göster
-    let sonView = kayitliView;
-    if (!sonView) {
-      const kullanici = Auth.aktifKullanici();
-      const rol = kullanici?.rol as UserRole;
-      if (rol === 'Antrenör') {
-        sonView = 'sporcu-listesi'; // Antrenör için varsayılan
-      } else {
-        sonView = 'dashboard'; // Yönetici ve Muhasebe için varsayılan
-      }
-    }
-    // İlk başlatmada input temizleme yapma (DOM henüz hazır olmayabilir)
-    try {
-      viewGoster(sonView, true); // true = ilk başlatma
-    } catch (e) {
-      console.warn('View gösterme hatası:', e);
-    }
-
-    // İlk indicator pozisyonunu ayarla (biraz gecikmeyle DOM'un hazır olmasını bekle)
-    setTimeout(() => {
-      try {
-        const kullanici = Auth.aktifKullanici();
-        if (!kullanici) return;
-        const rol = kullanici.rol as UserRole;
-        const gosterilecekView =
-          sonView && canAccessView(sonView, rol) ? sonView : defaultViewIdForRole(rol);
-        navIndicatorGuncelle(gosterilecekView);
-      } catch (e) {
-        console.warn('Nav indicator hatası:', e);
-      }
-    }, 100);
-
-    state.yuklendi = true;
-
-    // Sadece ilk yüklemede splash screen göster (yenilemede değil)
-    if (!kayitliView) {
-      splashScreenKapat();
-    }
-  } catch (error: any) {
-    // Sadece kritik hatalarda toast göster
-    console.error('Uygulama başlatma hatası:', error);
-    // Kritik hatalar için toast göster (sadece gerçek kritik hatalarda ve Helpers yüklüyse)
-    try {
-      if (
-        typeof window !== 'undefined' &&
-        (window as any).Helpers &&
-        typeof (window as any).Helpers.toast === 'function'
-      ) {
-        if (
-          error.message &&
-          !error.message.includes('Cannot read property') &&
-          !error.message.includes('undefined')
-        ) {
-          (window as any).Helpers.toast('Uygulama başlatılırken hata oluştu!', 'error');
-        }
-      }
-    } catch (e) {
-      // Toast gösterilemezse sessizce devam et
-      console.warn('Toast gösterilemedi:', e);
-    }
-    // Hata olsa bile splash screen'i kapat
-    if (!kayitliView) {
-      splashScreenKapat();
-    }
-  }
 }
 
 // ========== EXPORTS ==========
