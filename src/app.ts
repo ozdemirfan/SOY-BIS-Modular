@@ -20,6 +20,7 @@ import * as Rapor from './modules/rapor';
 import * as Ayarlar from './modules/ayarlar';
 import * as KullaniciYonetimi from './modules/kullanici-yonetimi';
 import * as Notification from './modules/notification';
+import { isMobile, handleResize } from './utils/responsiveLayout';
 
 // ========== TYPES & INTERFACES ==========
 
@@ -48,63 +49,6 @@ let resizeAbortController: AbortController | null = null;
 let themeAbortController: AbortController | null = null;
 
 // ========== HELPER FUNCTIONS ==========
-
-/**
- * Mobil menü kontrolü - sadece mobilde çalışmalı
- */
-function isMobile(): boolean {
-  return typeof window !== 'undefined' && window.innerWidth < 769;
-}
-
-/**
- * Window resize event handler - ekran boyutu değiştiğinde menüyü güncelle
- */
-function handleResize(): void {
-  const sidebar = Helpers.$('#sidebar');
-  const fabBtn = Helpers.$('#hamburgerBtn');
-  const overlay = Helpers.$('#mobileMenuOverlay');
-
-  if (!sidebar) return;
-
-  // Eğer desktop moduna geçildiyse (769px ve üzeri)
-  if (window.innerWidth >= 769) {
-    // Mobil menüyü kapat
-    if (fabBtn) {
-      fabBtn.classList.remove('active');
-      fabBtn.setAttribute('aria-expanded', 'false');
-    }
-    if (sidebar) {
-      sidebar.classList.remove('open');
-      // Masaüstü modunda sidebar-closed class'ını kontrol et
-      const sidebarOpen =
-        typeof localStorage !== 'undefined' ? localStorage.getItem('sidebarOpen') : null;
-      const shouldBeOpen = sidebarOpen === null ? true : sidebarOpen === 'true';
-      if (shouldBeOpen) {
-        sidebar.classList.remove('sidebar-closed');
-      } else {
-        sidebar.classList.add('sidebar-closed');
-      }
-    }
-    if (overlay) {
-      overlay.classList.remove('active');
-    }
-    document.body.style.overflow = '';
-  } else {
-    // Mobil moduna geçildiyse, sidebar'ı normal haline getir
-    sidebar.classList.remove('sidebar-closed');
-    // Eğer açık değilse kapat
-    if (!sidebar.classList.contains('open')) {
-      if (fabBtn) {
-        fabBtn.classList.remove('active');
-        fabBtn.setAttribute('aria-expanded', 'false');
-      }
-      if (overlay) {
-        overlay.classList.remove('active');
-      }
-      document.body.style.overflow = '';
-    }
-  }
-}
 
 /**
  * Splash screen'i göster
