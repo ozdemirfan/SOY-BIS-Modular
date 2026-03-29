@@ -27,16 +27,15 @@ import {
   loginOverlayGoster,
   loginOverlayGizle,
 } from './utils/loginSplashUi';
+import { canAccessView, defaultViewIdForRole } from './app/viewAccess';
+import { tarihiGuncelle } from './utils/appHeaderDate';
+import { aramaKutulariniTemizle, formInputlariniTemizle } from './utils/appFormCleanup';
 
 // ========== TYPES & INTERFACES ==========
 
 interface AppState {
   aktifView: string;
   yuklendi: boolean;
-}
-
-interface ViewYetkileri {
-  [key: string]: string[];
 }
 
 // Global window types are already declared in other modules
@@ -55,21 +54,7 @@ let resizeAbortController: AbortController | null = null;
 let themeAbortController: AbortController | null = null;
 
 // ========== HELPER FUNCTIONS ==========
-
-/**
- * Tarihi güncelle
- */
-function tarihiGuncelle(): void {
-  const tarihEl = Helpers.$('#nowDate');
-  if (tarihEl) {
-    tarihEl.textContent = new Date().toLocaleDateString('tr-TR', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-  }
-}
+// tarihiGuncelle → utils/appHeaderDate
 
 // ========== NAVIGATION ==========
 
@@ -131,41 +116,10 @@ function viewGoster(viewId: string, ilkBaslatma = false): void {
   }
 
   const rol = kullanici.rol as UserRole;
-  // Uluslararası RBAC normlarına göre view yetkileri
-  const yetkiler: ViewYetkileri = {
-    Yönetici: [
-      'dashboard',
-      'sporcu-kayit',
-      'sporcu-listesi',
-      'aidat',
-      'yoklama',
-      'giderler',
-      'antrenorler',
-      'raporlar',
-      'ayarlar',
-      'kullanici-yonetimi',
-    ],
-    Antrenör: ['sporcu-listesi', 'yoklama'], // Dashboard YOK - Finansal bilgiler içeriyor
-    Muhasebe: ['dashboard', 'aidat', 'giderler', 'raporlar'], // Finansal işlemler için dashboard gerekli
-  };
 
-  const izinliViewlar = yetkiler[rol] || [];
-
-  // Özel durum: sporcu-detay-raporu view'i sporcu-listesi yetkisine sahip olanlar için erişilebilir
-  // Bu bir alt sayfa olduğu için, sporcu-listesi yetkisi yeterli
-  const isRaporView = viewId === 'sporcu-detay-raporu';
-  const hasSporcuListesiAccess = izinliViewlar.includes('sporcu-listesi');
-
-  if (!izinliViewlar.includes(viewId) && !(isRaporView && hasSporcuListesiAccess)) {
+  if (!canAccessView(viewId, rol)) {
     Helpers.toast('Bu sayfaya erişim yetkiniz yok!', 'error');
-    // Rol bazlı varsayılan view'a yönlendir
-    if (rol === 'Antrenör') {
-      viewId = 'sporcu-listesi'; // Antrenör için varsayılan
-    } else if (rol === 'Muhasebe') {
-      viewId = 'dashboard'; // Muhasebe için varsayılan
-    } else {
-      viewId = 'dashboard'; // Yönetici için varsayılan
-    }
+    viewId = defaultViewIdForRole(rol);
   }
 
   if (!ilkBaslatma) {
@@ -716,107 +670,7 @@ function viewGuncellemeleri(viewId: string): void {
   }
 }
 
-/**
- * Tüm arama kutularını temizle
- */
-function aramaKutulariniTemizle(): void {
-  let temizlenenAramaKutusu = 0;
-
-  // Sporcu listesi arama kutusu
-  const searchBox = Helpers.$('#searchBox') as HTMLInputElement | null;
-  if (searchBox) {
-    searchBox.value = '';
-    temizlenenAramaKutusu++;
-  }
-
-  // Aidat arama kutusu
-  const aidatArama = Helpers.$('#aidatArama') as HTMLInputElement | null;
-  if (aidatArama) {
-    aidatArama.value = '';
-    temizlenenAramaKutusu++;
-  }
-
-  // Diğer arama kutuları (varsa)
-  document
-    .querySelectorAll('.search-box, input[type="search"], input[placeholder*="ara" i]')
-    .forEach(input => {
-      const htmlInput = input as HTMLInputElement;
-      if (htmlInput.id !== 'searchBox' && htmlInput.id !== 'aidatArama') {
-        htmlInput.value = '';
-        temizlenenAramaKutusu++;
-      }
-    });
-}
-
-/**
- * Tüm form input'larını temizle (validation class'ları dahil)
- */
-function formInputlariniTemizle(): void {
-  try {
-    // Önce tüm form'ları reset et
-    const forms = document.querySelectorAll('form');
-    let resetlenenFormSayisi = 0;
-    let atlananFormSayisi = 0;
-
-    forms.forEach(form => {
-      try {
-        // Arama formları hariç (arama kutuları genelde form içinde değil)
-        const isSearchForm =
-          form.classList.contains('search-form') ||
-          form.id === 'searchForm' ||
-          form.querySelector('input[type="search"]');
-
-        if (!isSearchForm) {
-          form.reset();
-          resetlenenFormSayisi++;
-        } else {
-          atlananFormSayisi++;
-        }
-      } catch (e) {
-        console.warn('Form reset hatası:', e);
-      }
-    });
-
-    // Tüm input, select, textarea elementlerini bul
-    const inputs = document.querySelectorAll('input, select, textarea');
-    if (!inputs || inputs.length === 0) return;
-
-    let temizlenenInputSayisi = 0;
-    let atlananInputSayisi = 0;
-
-    inputs.forEach(input => {
-      try {
-        const htmlInput = input as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
-        // Sadece form içindeki input'ları temizle (arama kutuları hariç)
-        const isSearchBox =
-          htmlInput.classList.contains('search-box') ||
-          htmlInput.id === 'searchBox' ||
-          htmlInput.id === 'aidatArama' ||
-          (htmlInput instanceof HTMLInputElement && htmlInput.type === 'search');
-
-        if (!isSearchBox && htmlInput.id) {
-          // Validation class'larını kaldır
-          htmlInput.classList.remove('validated-success', 'error');
-
-          // Error text'leri temizle
-          const errorEl = document.getElementById(htmlInput.id + 'Error');
-          if (errorEl) {
-            errorEl.textContent = '';
-          }
-          temizlenenInputSayisi++;
-        } else {
-          atlananInputSayisi++;
-        }
-      } catch (e) {
-        // Tek bir input'ta hata olsa bile devam et
-        console.warn('Input temizleme hatası (tek eleman):', e);
-      }
-    });
-  } catch (e) {
-    // Genel hata durumunda sessizce devam et
-    console.warn('Form input temizleme hatası:', e);
-  }
-}
+// aramaKutulariniTemizle / formInputlariniTemizle → utils/appFormCleanup
 
 // ========== MODULE INITIALIZATION ==========
 
@@ -1326,37 +1180,12 @@ function viewYetkiKontrol(): void {
 
   const rol = kullanici.rol as UserRole;
 
-  // Uluslararası RBAC normlarına göre view yetkileri
-  const yetkiler: ViewYetkileri = {
-    Yönetici: [
-      'dashboard',
-      'sporcu-kayit',
-      'sporcu-listesi',
-      'aidat',
-      'yoklama',
-      'giderler',
-      'antrenorler',
-      'raporlar',
-      'ayarlar',
-      'kullanici-yonetimi',
-    ],
-    Antrenör: ['sporcu-listesi', 'yoklama'], // Dashboard YOK - Finansal bilgiler içeriyor
-    Muhasebe: ['dashboard', 'aidat', 'giderler', 'raporlar'], // Finansal işlemler için dashboard gerekli
-  };
-
-  const izinliViewlar = yetkiler[rol] || [];
-
-  // Tüm view'ları kontrol et
   const views = Helpers.$$('.view');
   views.forEach(view => {
     const viewId = view.id;
-    if (!izinliViewlar.includes(viewId)) {
-      // Erişim yok, view'ı gizle (inline style ile - CSS class'dan önce çalışır)
+    if (!canAccessView(viewId, rol)) {
       (view as HTMLElement).style.display = 'none';
     } else {
-      // Erişim var - inline style'ı temizle (CSS class'ın çalışmasına izin ver)
-      // viewGoster() fonksiyonu aktif view için style.display = 'block' set edecek
-      // Burada sadece inline style'ı temizliyoruz, CSS class'ın çalışmasına izin veriyoruz
       const viewEl = view as HTMLElement;
       if (viewEl.style.display === 'none') {
         viewEl.style.display = '';
@@ -2213,39 +2042,12 @@ export async function init(): Promise<void> {
     // İlk indicator pozisyonunu ayarla (biraz gecikmeyle DOM'un hazır olmasını bekle)
     setTimeout(() => {
       try {
-        // Yetki kontrolü - eğer sonView erişilemezse rol bazlı varsayılan kullan
         const kullanici = Auth.aktifKullanici();
-        const rol = kullanici?.rol as UserRole;
-        const yetkiler: ViewYetkileri = {
-          Yönetici: [
-            'dashboard',
-            'sporcu-kayit',
-            'sporcu-listesi',
-            'aidat',
-            'yoklama',
-            'giderler',
-            'antrenorler',
-            'raporlar',
-            'ayarlar',
-            'kullanici-yonetimi',
-          ],
-          Antrenör: ['sporcu-listesi', 'yoklama'],
-          Muhasebe: ['dashboard', 'aidat', 'giderler', 'raporlar'],
-        };
-
-        // Özel durum: sporcu-detay-raporu view'i sporcu-listesi yetkisine sahip olanlar için erişilebilir
-        const izinliViewlar = yetkiler[rol] || [];
-        const isRaporView = sonView === 'sporcu-detay-raporu';
-        const hasSporcuListesiAccess = izinliViewlar.includes('sporcu-listesi');
+        if (!kullanici) return;
+        const rol = kullanici.rol as UserRole;
         const gosterilecekView =
-          izinliViewlar.includes(sonView || '') || (isRaporView && hasSporcuListesiAccess)
-            ? sonView
-            : rol === 'Antrenör'
-              ? 'sporcu-listesi'
-              : 'dashboard';
-        if (gosterilecekView) {
-          navIndicatorGuncelle(gosterilecekView);
-        }
+          sonView && canAccessView(sonView, rol) ? sonView : defaultViewIdForRole(rol);
+        navIndicatorGuncelle(gosterilecekView);
       } catch (e) {
         console.warn('Nav indicator hatası:', e);
       }
