@@ -79,8 +79,8 @@ export async function girisYap(kullaniciAdi: string, sifre: string): Promise<Ses
 export function cikisYap(): void {
   // Backend'den çıkış denemesi (MVP: başarısızsa yine de UI'yi temizliyoruz)
   if (API_ENABLED) {
-    void apiPost('/auth/logout', {}).catch(() => {
-      // ignore
+    void apiPost('/auth/logout', {}).catch(err => {
+      console.warn('[SOY-BIS API] Çıkış isteği tamamlanamadı (oturum yine de temizlenir):', err);
     });
   }
 
