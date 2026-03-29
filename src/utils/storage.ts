@@ -13,6 +13,18 @@ import { apiDelete, apiGet, apiPost } from '../services/apiClient';
 const API_ENABLED = true;
 const MAX_DB_INT_ID = 2147483647;
 
+/** Arka plan API hatası — konsol (toast spam’ini önlemek için kaydet() tetikli senkronlarda sadece bu). */
+function logApiSyncFailure(context: string, error: unknown): void {
+  const detail = error instanceof Error ? error.message : String(error);
+  console.warn(`[SOY-BIS API] ${context}:`, detail);
+}
+
+/** CRUD senkronu başarısız — kullanıcıya uyarı (yerel veri zaten güncellendi). */
+function notifyApiSyncFailure(context: string, error: unknown): void {
+  logApiSyncFailure(context, error);
+  toast('Sunucuya yazılamadı; yerel kayıt güncel. Bağlantıyı kontrol edin.', 'warning');
+}
+
 // Backup interface
 interface BackupData {
   versiyon: string;
@@ -108,11 +120,13 @@ export function kaydet<T>(key: string, data: T): boolean {
     // Entity (sporcu/aidat/yoklama) yazımları ilgili CRUD fonksiyonlarında ayrıca yapılır.
     if (API_ENABLED) {
       if (key === STORAGE_KEYS.AYARLAR) {
-        void apiPost('/ayarlar', data as unknown as Record<string, unknown>).catch(() => {});
+        void apiPost('/ayarlar', data as unknown as Record<string, unknown>).catch(err =>
+          logApiSyncFailure('Ayarlar senkronu', err)
+        );
       }
       if (key === STORAGE_KEYS.BASLANGIC_BAKIYESI) {
-        void apiPost('/baslangic_bakiyesi', data as unknown as Record<string, unknown>).catch(
-          () => {}
+        void apiPost('/baslangic_bakiyesi', data as unknown as Record<string, unknown>).catch(err =>
+          logApiSyncFailure('Başlangıç bakiyesi senkronu', err)
         );
       }
     }
@@ -296,7 +310,7 @@ export function sporcuKaydet(sporcu: Partial<Sporcu> & { id?: number }): Sporcu 
       sporcuCacheTemizle();
       const updated = sporcular[index] as Sporcu;
       if (API_ENABLED) {
-        void apiPost('/sporcular', updated).catch(() => {});
+        void apiPost('/sporcular', updated).catch(err => notifyApiSyncFailure('Sporcu güncelleme', err));
       }
       return updated;
     }
@@ -352,7 +366,7 @@ export function sporcuKaydet(sporcu: Partial<Sporcu> & { id?: number }): Sporcu 
     sporcuCacheTemizle();
 
     if (API_ENABLED) {
-      void apiPost('/sporcular', yeniSporcu).catch(() => {});
+      void apiPost('/sporcular', yeniSporcu).catch(err => notifyApiSyncFailure('Sporcu ekleme', err));
     }
 
     return yeniSporcu;
@@ -362,7 +376,7 @@ export function sporcuKaydet(sporcu: Partial<Sporcu> & { id?: number }): Sporcu 
   kaydet(STORAGE_KEYS.SPORCULAR, sporcular);
   const updated = sporcular.find(s => s.id === sporcu.id) as Sporcu;
   if (API_ENABLED) {
-    void apiPost('/sporcular', updated).catch(() => {});
+    void apiPost('/sporcular', updated).catch(err => notifyApiSyncFailure('Sporcu güncelleme', err));
   }
   return updated;
 }
@@ -563,7 +577,7 @@ export function aidatSil(id: number): void {
   kaydet(STORAGE_KEYS.AIDATLAR, aidatlar);
 
   if (API_ENABLED) {
-    void apiDelete(`/aidatlar/${id}`).catch(() => {});
+    void apiDelete(`/aidatlar/${id}`).catch(err => notifyApiSyncFailure('Aidat silme', err));
   }
 }
 
@@ -782,7 +796,7 @@ export function yoklamaKaydet(
       sporcuId,
       eskiDurum,
       yeniDurum: durum,
-    } as Record<string, unknown>).catch(() => {});
+    } as Record<string, unknown>).catch(err => notifyApiSyncFailure('Yoklama senkronu', err));
   }
 }
 
@@ -834,7 +848,7 @@ export function giderKaydet(gider: Partial<Gider> & { id?: number }): Gider {
   kaydet(STORAGE_KEYS.GIDERLER, giderler);
 
   if (API_ENABLED) {
-    void apiPost('/giderler', yeniGider).catch(() => {});
+    void apiPost('/giderler', yeniGider).catch(err => notifyApiSyncFailure('Gider kaydı', err));
   }
 
   return yeniGider;
@@ -848,7 +862,7 @@ export function giderSil(id: number): void {
   kaydet(STORAGE_KEYS.GIDERLER, giderler);
 
   if (API_ENABLED) {
-    void apiDelete(`/giderler/${id}`).catch(() => {});
+    void apiDelete(`/giderler/${id}`).catch(err => notifyApiSyncFailure('Gider silme', err));
   }
 }
 
@@ -896,7 +910,9 @@ export function antrenorKaydet(antrenor: Partial<Antrenor> & { id?: number }): A
     kaydet(STORAGE_KEYS.ANTRENORLER, antrenorler);
 
     if (API_ENABLED) {
-      void apiPost('/antrenorler', yeniAntrenor).catch(() => {});
+      void apiPost('/antrenorler', yeniAntrenor).catch(err =>
+        notifyApiSyncFailure('Antrenör ekleme', err)
+      );
     }
 
     return yeniAntrenor;
@@ -905,7 +921,7 @@ export function antrenorKaydet(antrenor: Partial<Antrenor> & { id?: number }): A
   kaydet(STORAGE_KEYS.ANTRENORLER, antrenorler);
   const updated = antrenorler.find(a => a.id === antrenor.id) as Antrenor;
   if (API_ENABLED) {
-    void apiPost('/antrenorler', updated).catch(() => {});
+    void apiPost('/antrenorler', updated).catch(err => notifyApiSyncFailure('Antrenör güncelleme', err));
   }
   return updated;
 }
@@ -918,7 +934,7 @@ export function antrenorSil(id: number): void {
   kaydet(STORAGE_KEYS.ANTRENORLER, antrenorler);
 
   if (API_ENABLED) {
-    void apiDelete(`/antrenorler/${id}`).catch(() => {});
+    void apiDelete(`/antrenorler/${id}`).catch(err => notifyApiSyncFailure('Antrenör silme', err));
   }
 }
 
@@ -990,7 +1006,9 @@ export function yedekYukle(yedek: BackupData): boolean {
 
     // API modunda backend'i de aynı yedek ile güncelliyoruz.
     if (API_ENABLED) {
-      void apiPost('/backup/restore', yedek).catch(() => {});
+      void apiPost('/backup/restore', yedek).catch(err =>
+        notifyApiSyncFailure('Yedek sunucuya geri yükleme', err)
+      );
     }
 
     toast('Veriler başarıyla geri yüklendi!', 'success');
@@ -1080,7 +1098,9 @@ export async function kullaniciKaydet(
     kullanicilar.push(yeniKullanici);
     kaydet(STORAGE_KEYS.KULLANICILAR, kullanicilar);
     if (API_ENABLED) {
-      void apiPost('/kullanicilar', yeniKullanici).catch(() => {});
+      void apiPost('/kullanicilar', yeniKullanici).catch(err =>
+        notifyApiSyncFailure('Kullanıcı ekleme', err)
+      );
     }
     return yeniKullanici;
   }
@@ -1088,7 +1108,9 @@ export async function kullaniciKaydet(
   kaydet(STORAGE_KEYS.KULLANICILAR, kullanicilar);
   const updated = kullanicilar.find(k => k.id === kullanici.id) as User;
   if (API_ENABLED) {
-    void apiPost('/kullanicilar', updated).catch(() => {});
+    void apiPost('/kullanicilar', updated).catch(err =>
+      notifyApiSyncFailure('Kullanıcı güncelleme', err)
+    );
   }
   return updated;
 }
@@ -1101,7 +1123,9 @@ export function kullaniciSil(id: number): void {
   kaydet(STORAGE_KEYS.KULLANICILAR, kullanicilar);
 
   if (API_ENABLED) {
-    void apiDelete(`/kullanicilar/${id}`).catch(() => {});
+    void apiDelete(`/kullanicilar/${id}`).catch(err =>
+      notifyApiSyncFailure('Kullanıcı silme', err)
+    );
   }
 }
 
