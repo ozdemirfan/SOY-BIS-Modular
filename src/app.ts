@@ -38,6 +38,9 @@ import {
   closeMobileMenu,
 } from './app/appMobileNav';
 import { masaustuSidebarYonetimi, toggleDesktopSidebar } from './app/appDesktopSidebar';
+import { malzemeModalEventleriniBagla } from './app/malzemeModalBridge';
+import { klavyeKisayollari } from './app/appKeyboardShortcuts';
+import { ayarlarEventleri } from './app/appSettingsEvents';
 
 export { toggleMobileMenu, openMobileMenu, closeMobileMenu };
 export { masaustuSidebarYonetimi, toggleDesktopSidebar };
@@ -787,185 +790,6 @@ function modulleriBaslat(): void {
   }
 }
 
-// ========== KEYBOARD SHORTCUTS ==========
-
-/**
- * Keyboard shortcuts
- */
-function klavyeKisayollari(): void {
-  document.addEventListener('keydown', function (e: KeyboardEvent) {
-    // Modal açıksa sadece ESC çalışsın
-    const activeModal = document.querySelector('.modal.active');
-    if (activeModal) {
-      if (e.key === 'Escape') {
-        const closeBtn = activeModal.querySelector('.modal-close');
-        if (closeBtn) (closeBtn as HTMLElement).click();
-      }
-      return;
-    }
-
-    // Input/textarea içindeyse sadece Ctrl+S çalışsın
-    const target = e.target as HTMLElement;
-    const isInput =
-      target.tagName === 'INPUT' ||
-      target.tagName === 'TEXTAREA' ||
-      target.tagName === 'SELECT' ||
-      target.isContentEditable;
-
-    // Ctrl+S: Form kaydet (eğer form varsa)
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-      e.preventDefault();
-      const activeForm = document.querySelector('form:not([style*="display: none"])');
-      if (activeForm) {
-        const submitBtn = activeForm.querySelector('button[type="submit"]');
-        if (submitBtn && !(submitBtn as HTMLButtonElement).disabled) {
-          (submitBtn as HTMLElement).click();
-          Helpers.toast('Form kaydediliyor...', 'info');
-        }
-      }
-      return;
-    }
-
-    // Input içindeyken diğer kısayollar çalışmasın
-    if (isInput) return;
-
-    // Sayısal tuşlar: Hızlı navigasyon (1-9)
-    if (e.key >= '1' && e.key <= '9' && !e.ctrlKey && !e.altKey) {
-      const navButtons = Helpers.$$('#mainNav button');
-      const index = parseInt(e.key) - 1;
-      if (navButtons[index]) {
-        (navButtons[index] as HTMLElement).click();
-      }
-    }
-
-    // G: Dashboard'a git
-    if (e.key === 'g' || e.key === 'G') {
-      if (!e.ctrlKey && !e.altKey) {
-        viewGoster('dashboard');
-      }
-    }
-
-    // Ctrl+K veya /: Arama kutusuna odaklan
-    if ((e.ctrlKey && e.key === 'k') || e.key === '/') {
-      e.preventDefault();
-      const searchBox = document.querySelector('.search-box, #searchBox, #aidatArama');
-      if (searchBox) {
-        (searchBox as HTMLElement).focus();
-        if (searchBox instanceof HTMLInputElement) {
-          searchBox.select();
-        }
-      }
-    }
-  });
-}
-
-// ========== SETTINGS ==========
-
-/**
- * Ayarlar eventlerini bağla
- */
-function ayarlarEventleri(): void {
-  // Yedekle butonu
-  const yedekleBtn = Helpers.$('#yedekleBtn');
-  if (yedekleBtn) {
-    yedekleBtn.addEventListener('click', function () {
-      Storage.yedekIndir();
-    });
-  }
-
-  // Geri yükle butonu
-  const geriYukleBtn = Helpers.$('#geriYukleBtn');
-  const yedekDosya = Helpers.$('#yedekDosya') as HTMLInputElement | null;
-
-  if (geriYukleBtn && yedekDosya) {
-    geriYukleBtn.addEventListener('click', function () {
-      yedekDosya.click();
-    });
-
-    yedekDosya.addEventListener('change', async function (e: Event) {
-      const target = e.target as HTMLInputElement;
-      const file = target.files?.[0];
-      if (!file) return;
-
-      try {
-        const yedek = await Storage.dosyadanYukle(file);
-
-        if (
-          Helpers.onay(
-            'Mevcut veriler yedekteki verilerle değiştirilecek. Devam etmek istiyor musunuz?'
-          )
-        ) {
-          if (Storage.yedekYukle(yedek)) {
-            location.reload();
-          }
-        }
-      } catch (error: any) {
-        Helpers.toast(error.message || 'Yedek yükleme hatası', 'error');
-      }
-
-      // Input'u sıfırla
-      target.value = '';
-    });
-  }
-
-  // Sistemi sıfırla butonu
-  const sifirlaBtn = Helpers.$('#sistemiSifirlaBtn');
-  if (sifirlaBtn) {
-    sifirlaBtn.addEventListener('click', async function () {
-      if (
-        !Helpers.onay(
-          '⚠️ DİKKAT!\n\nTüm veriler kalıcı olarak silinecek. Bu işlem geri alınamaz!\n\nDevam etmek istiyor musunuz?'
-        )
-      ) {
-        return;
-      }
-
-      const kullaniciAdi = Helpers.girdi(
-        '⚠️ SİSTEM SIFIRLAMA\n\nYönetici kullanıcı adınızı girin:\n(Varsayılan: admin)',
-        'admin'
-      );
-      if (kullaniciAdi === null || !kullaniciAdi.trim()) {
-        Helpers.toast('İşlem iptal edildi!', 'warning');
-        return;
-      }
-
-      // Kullanıcı adı kontrolü - eğer "admin" değilse uyarı ver
-      if (kullaniciAdi.trim().toLowerCase() !== 'admin') {
-        if (
-          !Helpers.onay(
-            `⚠️ UYARI!\n\nGirdiğiniz kullanıcı adı "${kullaniciAdi}" değil, "admin" olmalı!\n\nDevam etmek istiyor musunuz?`
-          )
-        ) {
-          return;
-        }
-      }
-
-      // Şifre için varsayılan değer YOK - güvenlik açığı önlendi
-      const sifre = Helpers.girdi('⚠️ SİSTEM SIFIRLAMA\n\nYönetici şifrenizi girin:');
-      if (sifre === null || !sifre.trim()) {
-        Helpers.toast('Şifre girilmedi! İşlem iptal edildi.', 'warning');
-        return;
-      }
-
-      // Async şifre doğrulama (trim ile temizle)
-      const basarili = await Storage.sistemSifirla(kullaniciAdi.trim(), sifre.trim());
-      if (basarili) {
-        setTimeout(() => location.reload(), 1000);
-      }
-    });
-  }
-
-  // Çıkış butonu
-  const logoutBtn = Helpers.$('#logoutBtn');
-  if (logoutBtn) {
-    logoutBtn.addEventListener('click', function () {
-      if (Helpers.onay('Çıkış yapmak istediğinize emin misiniz?')) {
-        Auth.cikisYap();
-      }
-    });
-  }
-}
-
 /**
  * Login form eventlerini bağla
  */
@@ -1055,7 +879,7 @@ function loginEventleri(): void {
       ayarlarEventleri();
 
       // Keyboard shortcuts'ları bağla
-      klavyeKisayollari();
+      klavyeKisayollari(viewGoster);
 
       // Hamburger menü eventlerini bağla (Mobil)
       hamburgerMenuEventleri();
@@ -1422,141 +1246,6 @@ function yuklendiMi(): boolean {
 /**
  * Uygulamayı başlat
  */
-/**
- * Malzeme modal event listener'larını bağla (merkezi - bir kez)
- */
-function malzemeModalEventleriniBagla(): void {
-  // Çift eklenmeyi önle
-  if ((document as any).__soybis_malzeme_modal_listener_eklendi) {
-    return;
-  }
-
-  const modalClickHandler = (e: Event) => {
-    const target = e.target as HTMLElement;
-
-    // Sadece malzeme modal içindeki butonları işle
-    const malzemeModal = Helpers.$('#malzemeEkleModal');
-    if (!malzemeModal) return;
-
-    // Tıklanan element malzeme modal içinde değilse, işleme
-    // Bu kontrol en önce yapılmalı - modal dışındaki hiçbir şeyi işleme
-    if (!malzemeModal.contains(target)) {
-      return; // Modal dışındaki tıklamaları hiç işleme - form submit'leri engelleme
-    }
-
-    // Buraya geldiysek, tıklanan element malzeme modal içinde
-    // Sadece malzeme modal butonlarını işle
-
-    // Buton veya içindeki icon/text elementine tıklanmış olabilir
-    const button = target.closest('button') as HTMLButtonElement | null;
-    const buttonId = button?.id || target.id;
-
-    // Kapat butonları
-    if (
-      buttonId === 'malzemeModalKapat' ||
-      buttonId === 'malzemeIptal' ||
-      target.id === 'malzemeModalKapat' ||
-      target.id === 'malzemeIptal'
-    ) {
-      e.preventDefault();
-      e.stopPropagation();
-
-      // Context bilgisini modal'dan oku (data-modal-context attribute)
-      const context = malzemeModal.getAttribute('data-modal-context');
-
-      if (context === 'dashboard') {
-        // Dashboard modülünden kapat
-        if (
-          window.Dashboard &&
-          typeof (window.Dashboard as any).malzemeModalKapatF === 'function'
-        ) {
-          (window.Dashboard as any).malzemeModalKapatF();
-        }
-      } else if (context === 'sporcu-kayit') {
-        // Sporcu modülünden kapat
-        if (
-          window.Sporcu &&
-          typeof (window.Sporcu as any).sporcuMalzemeEkleModalKapat === 'function'
-        ) {
-          (window.Sporcu as any).sporcuMalzemeEkleModalKapat();
-        }
-      }
-
-      // Context temizle
-      malzemeModal.removeAttribute('data-modal-context');
-      return;
-    }
-
-    // Kaydet butonu
-    if (buttonId === 'malzemeEkleKaydet' || target.id === 'malzemeEkleKaydet') {
-      e.preventDefault();
-      e.stopPropagation();
-
-      // Context bilgisini modal'dan oku
-      const context = malzemeModal.getAttribute('data-modal-context');
-
-      if (context === 'dashboard') {
-        // Dashboard modülünden kaydet
-        if (window.Dashboard && typeof (window.Dashboard as any).malzemeKaydet === 'function') {
-          (window.Dashboard as any).malzemeKaydet();
-        }
-      } else if (context === 'sporcu-kayit') {
-        // Sporcu modülünden kaydet
-        if (window.Sporcu && typeof (window.Sporcu as any).sporcuMalzemeKaydet === 'function') {
-          (window.Sporcu as any).sporcuMalzemeKaydet();
-        }
-      }
-      return;
-    }
-
-    // Modal backdrop - sadece malzeme modal'ın kendisine tıklandığında
-    if (target === malzemeModal) {
-      e.preventDefault();
-      e.stopPropagation();
-
-      // Context bilgisini modal'dan oku
-      const context = malzemeModal.getAttribute('data-modal-context');
-
-      if (context === 'dashboard') {
-        // Dashboard modülünden kapat
-        if (
-          window.Dashboard &&
-          typeof (window.Dashboard as any).malzemeModalKapatF === 'function'
-        ) {
-          (window.Dashboard as any).malzemeModalKapatF();
-        }
-      } else if (context === 'sporcu-kayit') {
-        // Sporcu modülünden kapat
-        if (
-          window.Sporcu &&
-          typeof (window.Sporcu as any).sporcuMalzemeEkleModalKapat === 'function'
-        ) {
-          (window.Sporcu as any).sporcuMalzemeEkleModalKapat();
-        }
-      }
-
-      // Context temizle
-      malzemeModal.removeAttribute('data-modal-context');
-      return;
-    }
-  };
-
-  document.addEventListener('click', modalClickHandler);
-  (document as any).__soybis_malzeme_modal_listener_eklendi = true;
-  (document as any).__soybis_malzeme_modal_listener = modalClickHandler;
-
-  // Tutar input için para formatı
-  const inputHandler = (e: Event) => {
-    const target = e.target as HTMLElement;
-    if (target.id === 'malzemeTutar' && target instanceof HTMLInputElement) {
-      Helpers.paraFormatInput(target);
-    }
-  };
-
-  document.addEventListener('input', inputHandler);
-  (document as any).__soybis_malzeme_input_listener = inputHandler;
-}
-
 export async function init(): Promise<void> {
   // Uygulama başlatılıyor
 
@@ -1702,7 +1391,7 @@ export async function init(): Promise<void> {
 
     // Keyboard shortcuts'ları bağla
     try {
-      klavyeKisayollari();
+      klavyeKisayollari(viewGoster);
     } catch (e) {
       console.warn('Klavye kısayolları hatası:', e);
     }
