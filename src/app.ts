@@ -9,21 +9,9 @@ import * as Storage from './utils/storage';
 import * as Auth from './utils/auth';
 import type { UserRole } from './types';
 
-// Import modules
-import * as Dashboard from './modules/dashboard';
-import * as Sporcu from './modules/sporcu';
-import * as Aidat from './modules/aidat';
-import * as Yoklama from './modules/yoklama';
-import * as Gider from './modules/gider';
-import * as Antrenor from './modules/antrenor';
-import * as Rapor from './modules/rapor';
-import * as Ayarlar from './modules/ayarlar';
-import * as KullaniciYonetimi from './modules/kullanici-yonetimi';
-import * as Notification from './modules/notification';
 import { isMobile } from './utils/responsiveLayout';
 import { canAccessView } from './app/viewAccess';
 import { aramaKutulariniTemizle, formInputlariniTemizle } from './utils/appFormCleanup';
-import { temaDegistir, temaYonetiminiBaslat } from './app/appTheme';
 import { toggleMobileMenu, openMobileMenu, closeMobileMenu } from './app/appMobileNav';
 import { masaustuSidebarYonetimi, toggleDesktopSidebar } from './app/appDesktopSidebar';
 import type { LoginFlowHooks } from './app/appLoginFlow';
@@ -35,6 +23,7 @@ import {
 import { modulleriBaslat, tumunuGuncelle } from './app/appModulesInit';
 import { bootstrapApp } from './app/appBootstrap';
 import { hatirlatmaAyarlariGoster } from './app/appNotificationSettingsUi';
+import { attachModulesToWindow } from './app/appWindowExpose';
 
 export { toggleMobileMenu, openMobileMenu, closeMobileMenu };
 export { masaustuSidebarYonetimi, toggleDesktopSidebar };
@@ -299,60 +288,7 @@ export const App = {
  * Modülleri window'a expose et (backward compatibility için)
  */
 export function exposeModulesToWindow(): void {
-  if (typeof window !== 'undefined') {
-    // Set modules on window for backward compatibility
-    // Use type assertion to avoid conflicts with existing interface definitions
-    (window as any).Storage = Storage;
-    (window as any).Auth = Auth;
-    (window as any).Helpers = Helpers;
-
-    // Tema yönetimi fonksiyonlarını expose et
-    (window as any).temaDegistir = temaDegistir;
-    (window as any).temaYonetiminiBaslat = temaYonetiminiBaslat;
-    (window as any).Dashboard = Dashboard;
-    const existingSporcu = (window as any).Sporcu;
-    (window as any).Sporcu = {
-      ...Sporcu,
-      ...(existingSporcu?.kaydet && { kaydet: existingSporcu.kaydet }),
-      ...(existingSporcu?.raporGoster && { raporGoster: existingSporcu.raporGoster }),
-      ...(existingSporcu?.sporcuMalzemeEkleModalKapat && {
-        sporcuMalzemeEkleModalKapat: existingSporcu.sporcuMalzemeEkleModalKapat,
-      }),
-      ...(existingSporcu?.sporcuMalzemeKaydet && {
-        sporcuMalzemeKaydet: existingSporcu.sporcuMalzemeKaydet,
-      }),
-    };
-    // Aidat modülünü expose et - butonlar window.Aidat.odemeModalAc() şeklinde çağırıyor
-    // Hem modül yüklendiğinde hem de burada expose ediyoruz (güvenlik için)
-    (window as any).Aidat = {
-      init: Aidat.init,
-      listeyiGuncelle: Aidat.listeyiGuncelle,
-      hizliFiltrele: Aidat.hizliFiltrele,
-      filtreSifirla: Aidat.filtreSifirla,
-      odemeModalAc: Aidat.odemeModalAc,
-      gecmisModalAc: Aidat.gecmisModalAc,
-      donemRaporu: Aidat.donemRaporu,
-      takvimiOlustur: Aidat.takvimiOlustur,
-      aylikOzetOlustur: Aidat.aylikOzetOlustur,
-      monthlyListToggle: Aidat.monthlyListToggle,
-      monthlyTabSwitch: Aidat.monthlyTabSwitch,
-      monthlySearchFilter: Aidat.monthlySearchFilter,
-      monthlyDebtFilter: Aidat.monthlyDebtFilter,
-      monthlyPaidFilter: Aidat.monthlyPaidFilter,
-      gunSecildi: Aidat.gunSecildi,
-      smsGonderTekil: Aidat.smsGonderTekil,
-      topluSmsGonder: Aidat.topluSmsGonder,
-      gunDetaylariKapat: Aidat.gunDetaylariKapat,
-    };
-    (window as any).Yoklama = Yoklama;
-    (window as any).Gider = Gider;
-    (window as any).Antrenor = Antrenor;
-    (window as any).Rapor = Rapor;
-    (window as any).Ayarlar = Ayarlar;
-    (window as any).KullaniciYonetimi = KullaniciYonetimi;
-    (window as any).Notification = Notification;
-    window.App = App;
-  }
+  attachModulesToWindow(App);
 }
 
 // Logo yükleme hatalarını kontrol et ve düzelt (HTML'de onerror handler kullanılıyor)
