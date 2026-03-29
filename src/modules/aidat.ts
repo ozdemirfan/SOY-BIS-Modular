@@ -1559,11 +1559,7 @@ function odemeKaydet_fn(): void {
       // Aksi halde toplamBorc=0 iken ödeme tamamı "fazla" sayılıp kasada çift tahsilat + gelecek aya yansıtma oluşur.
       const burslu = sporcu.odemeBilgileri?.burslu === true;
       const aylikUcret = sporcu.odemeBilgileri?.aylikUcret || 0;
-      const beklenenBorcDonem = burslu
-        ? toplamBorc
-        : toplamBorc > 0
-          ? toplamBorc
-          : aylikUcret;
+      const beklenenBorcDonem = burslu ? toplamBorc : toplamBorc > 0 ? toplamBorc : aylikUcret;
 
       // Kalan borç = Beklenen - Tahsilat (negatif olamaz)
       const kalanBorc = Math.max(0, beklenenBorcDonem - toplamTahsilat);

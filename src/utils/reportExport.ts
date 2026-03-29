@@ -66,7 +66,9 @@ export function pdfInnerContentWidthMm(
 }
 
 /** Geçici PDF kökü için width (örn. tempDiv.style.width) */
-export function pdfExportRootWidthMm(marginMm: [number, number, number, number] = PDF_EXPORT_MARGIN_MM): string {
+export function pdfExportRootWidthMm(
+  marginMm: [number, number, number, number] = PDF_EXPORT_MARGIN_MM
+): string {
   return `${pdfInnerContentWidthMm(marginMm)}mm`;
 }
 
@@ -106,21 +108,23 @@ export function yieldUntilPaint(): Promise<void> {
  * html2canvas sık getImageData kullanır; Chrome `getContext('2d', { willReadFrequently: true })` önerir.
  * Yalnızca bu promise süresince prototype yamalanır (Chart.js vb. sürekli etkilenmez).
  */
-export async function runWithHtml2CanvasWillReadFrequentlyPatch<T>(fn: () => Promise<T>): Promise<T> {
+export async function runWithHtml2CanvasWillReadFrequentlyPatch<T>(
+  fn: () => Promise<T>
+): Promise<T> {
   if (typeof HTMLCanvasElement === 'undefined') {
     return fn();
   }
   const proto = HTMLCanvasElement.prototype;
+  // Native prototype method; `this` is always set via .call/.apply below (monkey-patch).
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   const orig = proto.getContext;
-  proto.getContext = function (
-    this: HTMLCanvasElement,
-    contextId: string,
-    ...rest: unknown[]
-  ) {
+  proto.getContext = function (this: HTMLCanvasElement, contextId: string, ...rest: unknown[]) {
     if (contextId === '2d') {
-      const base =
-        rest[0] && typeof rest[0] === 'object' ? { ...(rest[0] as object) } : {};
-      return orig.call(this, '2d', { ...base, willReadFrequently: true } as CanvasRenderingContext2DSettings);
+      const base = rest[0] && typeof rest[0] === 'object' ? { ...(rest[0] as object) } : {};
+      return orig.call(this, '2d', {
+        ...base,
+        willReadFrequently: true,
+      } as CanvasRenderingContext2DSettings);
     }
     return orig.apply(this, [contextId, ...rest] as Parameters<typeof orig>);
   } as typeof orig;
@@ -170,7 +174,8 @@ export function createPdfExportLoadingOverlay(): HTMLElement {
 
   const sub = document.createElement('div');
   sub.textContent = 'Sayfa görünür; indirme bitince kapanır.';
-  sub.style.cssText = 'font:13px system-ui,"Segoe UI",sans-serif;color:#64748b;margin-top:8px;line-height:1.45';
+  sub.style.cssText =
+    'font:13px system-ui,"Segoe UI",sans-serif;color:#64748b;margin-top:8px;line-height:1.45';
 
   card.appendChild(title);
   card.appendChild(sub);
@@ -416,10 +421,12 @@ export const PDF_HTML2PDF_PAGE_BREAK = {
 };
 
 /** jsPDF A4 iç yüksekliği (mm); html2pdf setPageSize.inner.px.height ile aynı formül */
-export function pdfInnerPageHeightPx(marginMm: [number, number, number, number] = [0, 0, 0, 0]): number {
+export function pdfInnerPageHeightPx(
+  marginMm: [number, number, number, number] = [0, 0, 0, 0]
+): number {
   const k = 72 / 25.4;
   const innerH = 297 - marginMm[0] - marginMm[2];
-  return Math.floor((innerH * k) / 72 * 96);
+  return Math.floor(((innerH * k) / 72) * 96);
 }
 
 /**
@@ -458,8 +465,7 @@ export function applyHtml2PdfAvoidSpacers(
       const pad = document.createElement('div');
       pad.className = 'html2pdf__avoid-spacer';
       pad.setAttribute('aria-hidden', 'true');
-      pad.style.cssText =
-        'display:block;margin:0;padding:0;border:0;clear:both;flex-shrink:0;';
+      pad.style.cssText = 'display:block;margin:0;padding:0;border:0;clear:both;flex-shrink:0;';
       pad.style.height = `${padH}px`;
       el.parentNode?.insertBefore(pad, el);
       inserted = true;

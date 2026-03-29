@@ -498,8 +498,8 @@ function viewGoster(viewId: string, ilkBaslatma = false): void {
       if (
         typeof window !== 'undefined' &&
         window.Sporcu &&
-        typeof (window.Sporcu as { listeFiltreleriniSifirla?: () => void }).listeFiltreleriniSifirla ===
-          'function'
+        typeof (window.Sporcu as { listeFiltreleriniSifirla?: () => void })
+          .listeFiltreleriniSifirla === 'function'
       ) {
         const spListReset = (window.Sporcu as { listeFiltreleriniSifirla: () => void })
           .listeFiltreleriniSifirla;

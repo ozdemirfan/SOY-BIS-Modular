@@ -1505,8 +1505,7 @@ export function finansalHesapla(
 
   type AidatSatir = (typeof filtrelenmisAidatlar)[0];
   const borcTahakkukuSatiri = (a: AidatSatir) =>
-    (a.tutar || 0) > 0 &&
-    (a.islem_turu === 'Aidat' || a.islem_turu === 'Malzeme' || !a.islem_turu);
+    (a.tutar || 0) > 0 && (a.islem_turu === 'Aidat' || a.islem_turu === 'Malzeme' || !a.islem_turu);
 
   /** Ödenmemiş borç satırları — kalan borç bu tutar üzerinden düşer (Ödendi satırları ödeme geçmişinde kapatılmış sayılır) */
   const borcTahakkukuAcik = (a: AidatSatir) =>
@@ -1522,7 +1521,9 @@ export function finansalHesapla(
   const toplamBorc = tahakkukAidat + tahakkukMalzeme;
 
   // Açık borç tutarı (Ödendi işaretli satırlar düşülür — çift kayıt veya yalnızca işaretli kapanış)
-  const acikBorcToplam = filtrelenmisAidatlar.filter(borcTahakkukuAcik).reduce((t, a) => t + (a.tutar || 0), 0);
+  const acikBorcToplam = filtrelenmisAidatlar
+    .filter(borcTahakkukuAcik)
+    .reduce((t, a) => t + (a.tutar || 0), 0);
 
   // Tahsilatları hesapla (negatif tutarlar veya islem_turu='Tahsilat')
   const toplamTahsilat = filtrelenmisAidatlar

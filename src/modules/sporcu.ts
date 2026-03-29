@@ -5889,7 +5889,8 @@ function raporRender(rapor: SporcuDetayRaporu): void {
     const raporSporcuId =
       lastRaporSporcuId ??
       (() => {
-        const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('lastRaporSporcuId') : null;
+        const raw =
+          typeof localStorage !== 'undefined' ? localStorage.getItem('lastRaporSporcuId') : null;
         return raw ? parseInt(raw, 10) : 0;
       })();
     if (raporSporcuId > 0) {

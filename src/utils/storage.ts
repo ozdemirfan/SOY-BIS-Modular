@@ -52,7 +52,9 @@ interface UserWithPassword extends Partial<User> {
 }
 
 function isValidDbIntId(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= MAX_DB_INT_ID;
+  return (
+    typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= MAX_DB_INT_ID
+  );
 }
 
 function generateDbSafeId(existingIds: number[]): number {
@@ -61,7 +63,7 @@ function generateDbSafeId(existingIds: number[]): number {
 
   // Deterministik bir aralıkta ilerleyerek çakışmasız ve INT uyumlu ID üret.
   for (let offset = 0; offset < 10000; offset++) {
-    const candidate = ((baseId + offset) % MAX_DB_INT_ID) || 1;
+    const candidate = (baseId + offset) % MAX_DB_INT_ID || 1;
     if (!usedIds.has(candidate)) {
       return candidate;
     }
@@ -310,7 +312,9 @@ export function sporcuKaydet(sporcu: Partial<Sporcu> & { id?: number }): Sporcu 
       sporcuCacheTemizle();
       const updated = sporcular[index] as Sporcu;
       if (API_ENABLED) {
-        void apiPost('/sporcular', updated).catch(err => notifyApiSyncFailure('Sporcu güncelleme', err));
+        void apiPost('/sporcular', updated).catch(err =>
+          notifyApiSyncFailure('Sporcu güncelleme', err)
+        );
       }
       return updated;
     }
@@ -366,7 +370,9 @@ export function sporcuKaydet(sporcu: Partial<Sporcu> & { id?: number }): Sporcu 
     sporcuCacheTemizle();
 
     if (API_ENABLED) {
-      void apiPost('/sporcular', yeniSporcu).catch(err => notifyApiSyncFailure('Sporcu ekleme', err));
+      void apiPost('/sporcular', yeniSporcu).catch(err =>
+        notifyApiSyncFailure('Sporcu ekleme', err)
+      );
     }
 
     return yeniSporcu;
@@ -376,7 +382,9 @@ export function sporcuKaydet(sporcu: Partial<Sporcu> & { id?: number }): Sporcu 
   kaydet(STORAGE_KEYS.SPORCULAR, sporcular);
   const updated = sporcular.find(s => s.id === sporcu.id) as Sporcu;
   if (API_ENABLED) {
-    void apiPost('/sporcular', updated).catch(err => notifyApiSyncFailure('Sporcu güncelleme', err));
+    void apiPost('/sporcular', updated).catch(err =>
+      notifyApiSyncFailure('Sporcu güncelleme', err)
+    );
   }
   return updated;
 }
@@ -441,11 +449,7 @@ export function sporcuTekrarAktifEt(id: number): void {
 
   const aidatlar = aidatlariGetir();
   const buDonemBorcVar = aidatlar.some(
-    a =>
-      a.sporcuId === id &&
-      a.donemAy === buAy &&
-      a.donemYil === buYil &&
-      a.islem_turu === 'Aidat'
+    a => a.sporcuId === id && a.donemAy === buAy && a.donemYil === buYil && a.islem_turu === 'Aidat'
   );
   if (buDonemBorcVar) {
     return;
@@ -562,7 +566,10 @@ export function aidatKaydet(aidat: Partial<Aidat> & { id?: number }): Aidat {
   if (API_ENABLED) {
     void apiPost('/aidatlar', yeniAidat).catch(error => {
       console.error('Aidat backend kaydı başarısız:', error);
-      toast('Ödeme yerelde kaydedildi ancak sunucuya yazılamadı. Lütfen bağlantıyı kontrol edin.', 'warning');
+      toast(
+        'Ödeme yerelde kaydedildi ancak sunucuya yazılamadı. Lütfen bağlantıyı kontrol edin.',
+        'warning'
+      );
     });
   }
 
@@ -921,7 +928,9 @@ export function antrenorKaydet(antrenor: Partial<Antrenor> & { id?: number }): A
   kaydet(STORAGE_KEYS.ANTRENORLER, antrenorler);
   const updated = antrenorler.find(a => a.id === antrenor.id) as Antrenor;
   if (API_ENABLED) {
-    void apiPost('/antrenorler', updated).catch(err => notifyApiSyncFailure('Antrenör güncelleme', err));
+    void apiPost('/antrenorler', updated).catch(err =>
+      notifyApiSyncFailure('Antrenör güncelleme', err)
+    );
   }
   return updated;
 }
