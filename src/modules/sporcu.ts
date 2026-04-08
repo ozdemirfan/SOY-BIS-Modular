@@ -48,9 +48,21 @@
 
 import * as Storage from '../utils/storage';
 import * as Helpers from '../utils/helpers';
+import {
+  buildReportDocumentMeta,
+  PDF_EXPORT_MARGIN_MM,
+  pdfExportRootWidthMm,
+  PDF_HTML2PDF_PAGE_BREAK,
+  getHtml2PdfCanvasScale,
+  reportEscapeHtml,
+  REPORT_PDF_STYLES,
+  runPdfExportWithRuntime,
+  stylePdfExportCaptureRoot,
+} from '../utils/reportExport';
 import * as Validation from '../utils/validation';
-import { Sporcu } from '../types';
+import { Sporcu, type AntrenmanGrubu } from '../types';
 import type { Session } from '../types';
+import { sporcuGuncelDonemAidatBorclu } from './aidat';
 
 /**
  * Sporcu Modülü Constants
@@ -111,6 +123,7 @@ declare global {
       kaydet?: () => void;
       duzenle?: (id: number) => void;
       sil?: (id: number) => void;
+      tekrarAktifEt?: (id: number) => void;
       durumDegistir?: (id: number) => void;
       formuTemizle?: () => void;
       listeyiGuncelle?: () => void;
@@ -119,6 +132,7 @@ declare global {
       sporcuMalzemeEkleModalKapat?: () => void;
       sporcuMalzemeKaydet?: () => void;
       raporGoster?: (sporcuId: number) => void;
+      antrenmanGruplariUiYenile?: () => void;
     };
     App?: {
       viewGoster: (view: string, ilkBaslatma?: boolean) => void;
@@ -164,6 +178,7 @@ interface FilterCache {
     searchTerm: string;
     bransFiltre: string;
     durumFiltre: string;
+    antrenmanGrubuFiltre: string;
     filtrelenmis: Sporcu[];
   } | null;
 }
@@ -175,13 +190,144 @@ let filterCache: FilterCache = {
 
 /**
  * Sporcular dizisinin hash'ini oluştur (değişiklik kontrolü için)
+ * Not: Sadece uzunluk+ID yeterli değil — Ayrıldı↔Aktif gibi durum değişince hash değişmeli;
+ * aksi halde filterCache eski filtrelenmiş listeyi kullanır (F5 beklentisi).
  */
 function hashSporcular(sporcular: Sporcu[]): string {
-  // Basit hash: uzunluk + ilk ve son elemanın ID'leri
   if (sporcular.length === 0) return 'empty';
   const firstId = sporcular[0]?.id || 0;
   const lastId = sporcular[sporcular.length - 1]?.id || 0;
-  return `${sporcular.length}_${firstId}_${lastId}`;
+  let sig = 0;
+  for (const s of sporcular) {
+    sig = (((sig * 31 + (Number(s.id) || 0)) | 0) >>> 0) % 2147483647;
+    const d = s.durum || '';
+    for (let i = 0; i < d.length; i++) {
+      sig = (((sig * 31 + d.charCodeAt(i)) | 0) >>> 0) % 2147483647;
+    }
+    const ag = s.antrenmanGrubuId || '';
+    for (let i = 0; i < ag.length; i++) {
+      sig = (((sig * 31 + ag.charCodeAt(i)) | 0) >>> 0) % 2147483647;
+    }
+  }
+  return `${sporcular.length}_${firstId}_${lastId}_${sig}`;
+}
+
+function sporcuAntrenmanAdi(sporcu: Sporcu): string {
+  const id = sporcu.antrenmanGrubuId;
+  if (!id) return '';
+  return Storage.antrenmanGrubuBul(id)?.ad || '';
+}
+
+/**
+ * Branşsız (eski) gruplar her sporcuda; branşlı gruplar yalnızca aynı branştaki sporcuda.
+ * Sporcunun branşı boşsa branşlı gruplar listelenmez (önce branş seçilmeli).
+ */
+function antrenmanGrubuBransEslesirMi(grup: AntrenmanGrubu, sporcuBrans: string): boolean {
+  const gb = (grup.brans || '').trim().toLowerCase();
+  const sb = sporcuBrans.trim().toLowerCase();
+  if (!gb) return true;
+  if (!sb) return false;
+  return gb === sb;
+}
+
+function antrenmanGruplariFormIcin(sporcuBrans: string): AntrenmanGrubu[] {
+  const tum = Storage.antrenmanGruplariGetir();
+  return tum
+    .filter(g => antrenmanGrubuBransEslesirMi(g, sporcuBrans))
+    .sort((a, b) => String(a.ad || '').localeCompare(String(b.ad || ''), 'tr'));
+}
+
+function antrenmanGruplariListeFiltreIcin(): AntrenmanGrubu[] {
+  return Storage.antrenmanGruplariGetir()
+    .slice()
+    .sort((a, b) => {
+      const ba = (a.brans || '').localeCompare(b.brans || '', 'tr');
+      if (ba !== 0) return ba;
+      return String(a.ad || '').localeCompare(String(b.ad || ''), 'tr');
+    });
+}
+
+/**
+ * Sporcunun mevcut antrenmanGrubuId değeri, branş filtresine göre üretilen listede yoksa <select> seçimi düşer (grup yok sanılır).
+ * Silinmiş veya uyuşmayan kayıt için de tek satır eklenir.
+ */
+function antrenmanGruplarSecimListesineEkle(
+  gruplar: AntrenmanGrubu[],
+  secilenId: string | undefined
+): AntrenmanGrubu[] {
+  const id = (secilenId || '').trim();
+  if (!id || id === '__none__') return gruplar.slice();
+  if (gruplar.some(g => g.id === id)) return gruplar.slice();
+  const o = Storage.antrenmanGrubuBul(id);
+  if (o) {
+    return [...gruplar, o].sort((a, b) =>
+      String(a.ad || '').localeCompare(String(b.ad || ''), 'tr')
+    );
+  }
+  return [
+    ...gruplar,
+    { id, ad: 'Tanımsız grup (silinmiş veya eksik)' },
+  ].sort((a, b) => String(a.ad || '').localeCompare(String(b.ad || ''), 'tr'));
+}
+
+/** Form ve liste filtresindeki antrenman grubu seçeneklerini doldurur */
+function antrenmanGrubuSecenekleriniDoldur(preserveFormSelection?: string): void {
+  const formSel = Helpers.$('#antrenmanGrubuSelect') as HTMLSelectElement | null;
+  const filtreSel = Helpers.$('#antrenmanGrubuFiltre') as HTMLSelectElement | null;
+  const formBransEl = Helpers.$('#brans') as HTMLSelectElement | null;
+  const formBrans = (formBransEl?.value || '').trim();
+  const listeBransEl = Helpers.$('#bransFiltre') as HTMLSelectElement | null;
+  const listeBrans = (listeBransEl?.value || '').trim();
+  /** Form: branş seçiliyse o branşa uygun gruplar; seçili değilken tüm merkezi gruplar (Ayarlar’dan eklenenler görünsün) */
+  const gruplarFormBase = formBrans
+    ? antrenmanGruplariFormIcin(formBrans)
+    : antrenmanGruplariListeFiltreIcin();
+  const formPrev =
+    preserveFormSelection !== undefined ? preserveFormSelection : formSel?.value || '';
+  const gruplarForm = antrenmanGruplarSecimListesineEkle(gruplarFormBase, formPrev);
+  /** Liste: branş seçiliyse yalnızca o branşa (ve branşsız) uygun gruplar; yoksa tüm gruplar */
+  const gruplarFiltreBase = listeBrans
+    ? antrenmanGruplariFormIcin(listeBrans)
+    : antrenmanGruplariListeFiltreIcin();
+  const filtrePrevRaw = filtreSel?.value || '';
+  const gruplarFiltre = antrenmanGruplarSecimListesineEkle(
+    gruplarFiltreBase,
+    filtrePrevRaw === '__none__' ? '' : filtrePrevRaw
+  );
+
+  if (formSel) {
+    const prev =
+      preserveFormSelection !== undefined ? preserveFormSelection : formSel.value;
+    formSel.innerHTML = '<option value="">— Grup seçilmedi —</option>';
+    for (const g of gruplarForm) {
+      const opt = document.createElement('option');
+      opt.value = g.id;
+      opt.textContent = g.brans ? `${g.ad} (${g.brans})` : g.ad;
+      formSel.appendChild(opt);
+    }
+    if (prev && gruplarForm.some(g => g.id === prev)) {
+      formSel.value = prev;
+    } else {
+      formSel.value = '';
+    }
+  }
+
+  if (filtreSel) {
+    const prev = filtreSel.value;
+    filtreSel.innerHTML =
+      '<option value="">Tüm Gruplar</option><option value="__none__">Grubu yok</option>';
+    for (const g of gruplarFiltre) {
+      const opt = document.createElement('option');
+      opt.value = g.id;
+      opt.textContent = g.brans ? `${g.ad} (${g.brans})` : g.ad;
+      filtreSel.appendChild(opt);
+    }
+    if (prev === '__none__' || prev === '' || gruplarFiltre.some(g => g.id === prev)) {
+      filtreSel.value = prev;
+    } else {
+      filtreSel.value = '';
+    }
+  }
 }
 
 // AbortController for event listener cleanup
@@ -223,6 +369,18 @@ let malzemeCounter = 0;
 // BÖLÜM 3: INITIALIZATION
 // ============================================================================
 
+/** Kayıt formunda branş değişince antrenman grubu listesini o branşa göre yeniler */
+function bransDegisinceAntrenmanGrubuBagla(): void {
+  const brans = Helpers.$('#brans') as HTMLSelectElement | null;
+  if (!brans || brans.dataset.antrenmanGrupBound === '1') return;
+  brans.dataset.antrenmanGrupBound = '1';
+  brans.addEventListener('change', () => {
+    const sel = Helpers.$('#antrenmanGrubuSelect') as HTMLSelectElement | null;
+    const prev = sel?.value || '';
+    antrenmanGrubuSecenekleriniDoldur(prev);
+  });
+}
+
 /**
  * Modülü başlat
  * Tüm event listener'ları bağlar ve listeyi günceller.
@@ -238,6 +396,7 @@ export function init(): void {
   }
 
   formEventleri();
+  bransDegisinceAntrenmanGrubuBagla();
   filtreEventleri();
   autoYasGrubuHesaplama();
   paraFormatiEventleri();
@@ -747,12 +906,14 @@ function formEventleri(): void {
 let searchBoxHandler: ((e: Event) => void) | null = null;
 let bransFiltreHandler: ((e: Event) => void) | null = null;
 let durumFiltreHandler: ((e: Event) => void) | null = null;
+let antrenmanGrubuFiltreHandler: ((e: Event) => void) | null = null;
 let isFiltreEventsInitialized = false;
 
 function filtreEventleri(): void {
   const searchBox = Helpers.$('#searchBox') as HTMLInputElement | null;
   const bransFiltre = Helpers.$('#bransFiltre') as HTMLSelectElement | null;
   const durumFiltre = Helpers.$('#durumFiltre') as HTMLSelectElement | null;
+  const antrenmanGrubuFiltre = Helpers.$('#antrenmanGrubuFiltre') as HTMLSelectElement | null;
 
   // Önce mevcut event listener'ları temizle (zombie event önleme)
   if (isFiltreEventsInitialized) {
@@ -767,6 +928,10 @@ function filtreEventleri(): void {
     if (durumFiltre && durumFiltreHandler) {
       durumFiltre.removeEventListener('change', durumFiltreHandler);
       durumFiltreHandler = null;
+    }
+    if (antrenmanGrubuFiltre && antrenmanGrubuFiltreHandler) {
+      antrenmanGrubuFiltre.removeEventListener('change', antrenmanGrubuFiltreHandler);
+      antrenmanGrubuFiltreHandler = null;
     }
   }
 
@@ -790,6 +955,7 @@ function filtreEventleri(): void {
       filterCache.cachedResults = null;
       filterCache.lastSporcularHash = '';
       requestAnimationFrame(() => {
+        antrenmanGrubuSecenekleriniDoldur();
         listeyiGuncelle();
         requestAnimationFrame(() => {
           this.disabled = false;
@@ -816,10 +982,26 @@ function filtreEventleri(): void {
     durumFiltre.addEventListener('change', durumFiltreHandler);
   }
 
+  if (antrenmanGrubuFiltre) {
+    antrenmanGrubuFiltreHandler = function (this: HTMLSelectElement) {
+      this.disabled = true;
+      filterCache.cachedResults = null;
+      filterCache.lastSporcularHash = '';
+      requestAnimationFrame(() => {
+        listeyiGuncelle();
+        requestAnimationFrame(() => {
+          this.disabled = false;
+        });
+      });
+    };
+    antrenmanGrubuFiltre.addEventListener('change', antrenmanGrubuFiltreHandler);
+  }
+
   isFiltreEventsInitialized = true;
 
   // Branş filtresini doldur
   bransFiltresiDoldur();
+  antrenmanGrubuSecenekleriniDoldur();
 
   // Event delegation: Sporcu listesi butonları için (edit, delete, toggle-status)
   const listContainer = Helpers.$('#sporcuListesi');
@@ -846,73 +1028,10 @@ function filtreEventleri(): void {
 // ============================================================================
 
 /**
- * Sorting başlat
+ * Liste kart görünümünde tablo başlığı olmadığı için sütun tıklama ile sıralama yok.
+ * Varsayılan sıralama `currentSort` + `listeyiGuncelle` içindeki `sortSporcular` ile sürüyor.
  */
-function initSorting(): void {
-  const thead = document.querySelector('#sporcu-listesi table thead');
-  if (!thead) return;
-
-  // Sıralanabilir kolonlar - Minimal görünüm (Ad, Branş, Yaş Grubu, Durum)
-  const sortableColumns: { selector: string; field: SortConfig['field'] }[] = [
-    { selector: 'th:nth-child(1)', field: 'adSoyad' },
-    { selector: 'th:nth-child(2)', field: 'brans' },
-    { selector: 'th:nth-child(3)', field: 'yasGrubu' },
-    { selector: 'th:nth-child(4)', field: 'durum' },
-  ];
-
-  sortableColumns.forEach(({ selector, field }) => {
-    const th = thead.querySelector(selector) as HTMLElement | null;
-    if (!th) return;
-
-    // Cursor pointer ekle
-    th.style.cursor = 'pointer';
-    th.style.userSelect = 'none';
-
-    // Icon için span ekle (eğer yoksa)
-    if (!th.querySelector('.sort-icon')) {
-      const iconSpan = document.createElement('span');
-      iconSpan.className = 'sort-icon';
-      iconSpan.style.marginLeft = '0.5rem';
-      iconSpan.style.opacity = '0.5';
-      iconSpan.innerHTML = '<i class="fa-solid fa-sort"></i>';
-      th.appendChild(iconSpan);
-    }
-
-    // Click event
-    th.addEventListener('click', () => {
-      // Sıralama yönünü belirle
-      if (currentSort.field === field) {
-        // Aynı alan: yönü değiştir
-        currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
-      } else {
-        // Yeni alan: varsayılan olarak asc
-        currentSort.field = field;
-        currentSort.direction = 'asc';
-      }
-
-      // Tüm icon'ları sıfırla
-      thead.querySelectorAll('.sort-icon').forEach(icon => {
-        const iconEl = icon as HTMLElement;
-        iconEl.innerHTML = '<i class="fa-solid fa-sort"></i>';
-        iconEl.style.opacity = '0.5';
-      });
-
-      // Aktif icon'u güncelle
-      const activeIcon = th.querySelector('.sort-icon') as HTMLElement | null;
-      if (activeIcon) {
-        activeIcon.style.opacity = '1';
-        if (currentSort.direction === 'asc') {
-          activeIcon.innerHTML = '<i class="fa-solid fa-sort-up"></i>';
-        } else {
-          activeIcon.innerHTML = '<i class="fa-solid fa-sort-down"></i>';
-        }
-      }
-
-      // Listeyi yeniden render et
-      listeyiGuncelle();
-    });
-  });
-}
+function initSorting(): void {}
 
 /**
  * Export butonlarını başlat
@@ -1027,18 +1146,13 @@ function exportToCSV(): void {
 
 /**
  * Sporcu listesini yazdır
+ * - Masaüstü: önce yeni sekme; çoğu mobil tarayıcı boş pencereyi engellediği için dar ekranda doğrudan gizli iframe kullanılır.
+ * - Popup null ise iframe yedek (pop-up engeli).
  */
 function printList(): void {
   const sporcular = Storage.sporculariGetir();
   if (sporcular.length === 0) {
     Helpers.toast('Yazdırılacak sporcu bulunamadı.', 'warning');
-    return;
-  }
-
-  // Print için yeni pencere aç
-  const printWindow = window.open('', '_blank');
-  if (!printWindow) {
-    Helpers.toast('Yazdırma penceresi açılamadı. Pop-up engelleyicisini kontrol edin.', 'error');
     return;
   }
 
@@ -1109,13 +1223,57 @@ function printList(): void {
     </html>
   `;
 
-  printWindow.document.write(printContent);
-  printWindow.document.close();
+  const isMobileWidth = window.innerWidth <= SPORCU_CONSTANTS.MOBILE_BREAKPOINT;
+  const printDelay = isMobileWidth ? 450 : SPORCU_CONSTANTS.ANIMATION_DELAY;
 
-  // Yazdırma dialog'unu aç (kısa bir gecikme ile içerik yüklensin)
-  setTimeout(() => {
-    printWindow.print();
-  }, SPORCU_CONSTANTS.ANIMATION_DELAY);
+  const writeAndPrint = (target: Window): void => {
+    const doc = target.document;
+    doc.open();
+    doc.write(printContent);
+    doc.close();
+    setTimeout(() => {
+      try {
+        target.focus();
+        target.print();
+      } catch {
+        Helpers.toast('Yazdırma başlatılamadı.', 'error');
+      }
+    }, printDelay);
+  };
+
+  const printWithIframe = (): void => {
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.title = 'Yazdırma';
+    iframe.style.cssText =
+      'position:fixed;left:0;top:0;width:100%;height:100%;border:0;opacity:0;pointer-events:none;z-index:-1;';
+    document.body.appendChild(iframe);
+    const cw = iframe.contentWindow;
+    if (!cw) {
+      iframe.remove();
+      Helpers.toast('Yazdırma açılamadı.', 'error');
+      return;
+    }
+    writeAndPrint(cw);
+    const removeIframe = (): void => {
+      iframe.remove();
+    };
+    cw.addEventListener('afterprint', removeIframe);
+    setTimeout(removeIframe, 120000);
+  };
+
+  if (isMobileWidth) {
+    printWithIframe();
+    return;
+  }
+
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    printWithIframe();
+    return;
+  }
+
+  writeAndPrint(printWindow);
 }
 
 // ============================================================================
@@ -1227,6 +1385,11 @@ function handleSporcuListAction(e: Event): void {
     case 'toggle-status':
       if (window.Sporcu && typeof window.Sporcu.durumDegistir === 'function') {
         window.Sporcu.durumDegistir(sporcuId);
+      }
+      break;
+    case 'reactivate':
+      if (window.Sporcu && typeof window.Sporcu.tekrarAktifEt === 'function') {
+        window.Sporcu.tekrarAktifEt(sporcuId);
       }
       break;
   }
@@ -1765,6 +1928,20 @@ function collectAndValidateFormData(): FormData | null {
     return null;
   }
 
+  const antrenmanGrubuSelect = Helpers.$('#antrenmanGrubuSelect') as HTMLSelectElement | null;
+  const agId = (antrenmanGrubuSelect?.value || '').trim();
+  const bransVal = (bransSelect.value || '').trim();
+  if (agId && bransVal) {
+    const g = Storage.antrenmanGrubuBul(agId);
+    if (g && !antrenmanGrubuBransEslesirMi(g, bransVal)) {
+      Helpers.toast(
+        'Seçili antrenman grubu bu branş ile uyumlu değil. Branşı veya antrenman grubunu değiştirin.',
+        'error'
+      );
+      return null;
+    }
+  }
+
   return {
     adSoyad: adSoyadInput.value.trim(),
     tcKimlik: tcKimlikInput ? tcKimlikInput.value.replace(/\D/g, '') : '',
@@ -1799,7 +1976,7 @@ function createSporcuObject(formData: FormData): Partial<Sporcu> {
   const alerjilerTextarea = Helpers.$('#alerjiler') as HTMLTextAreaElement | null;
   const kronikHastalikTextarea = Helpers.$('#kronikHastalik') as HTMLTextAreaElement | null;
   const autoYasGrubuEl = Helpers.$('#autoYasGrubu');
-  const kucukYasGrubuSelect = Helpers.$('#kucukYasGrubu') as HTMLSelectElement | null;
+  const antrenmanGrubuSelect = Helpers.$('#antrenmanGrubuSelect') as HTMLSelectElement | null;
   const saglikRaporuTarihInput = Helpers.$('#saglikRaporuTarih') as HTMLInputElement | null;
   const lisansTarihInput = Helpers.$('#lisansTarih') as HTMLInputElement | null;
   const lisansNoInput = Helpers.$('#lisansNo') as HTMLInputElement | null;
@@ -1863,8 +2040,8 @@ function createSporcuObject(formData: FormData): Partial<Sporcu> {
     },
     tffGruplari: {
       anaGrup: autoYasGrubuEl?.textContent || '',
-      kucukGrup: kucukYasGrubuSelect?.value || '',
     },
+    antrenmanGrubuId: (antrenmanGrubuSelect?.value || '').trim() || undefined,
     belgeler: {
       saglikRaporu: saglikRaporuTarihInput?.value || null,
       lisans: lisansTarihInput?.value || null,
@@ -2221,6 +2398,7 @@ function handleSaveSuccess(): void {
 
   formuTemizle();
   bransFiltresiDoldur();
+  antrenmanGrubuSecenekleriniDoldur();
 
   if (window.App && typeof window.App.viewGoster === 'function') {
     window.App.viewGoster('sporcu-listesi');
@@ -2342,6 +2520,8 @@ export function formuTemizle(): void {
   // Aylık ücret alanını göster
   const aylikUcretGroup = Helpers.$('#aylikUcretGroup') as HTMLElement | null;
   if (aylikUcretGroup) aylikUcretGroup.style.display = 'block';
+
+  antrenmanGrubuSecenekleriniDoldur('');
 }
 
 /**
@@ -2379,7 +2559,6 @@ export function duzenle(id: number): void {
   const kanGrubuSelect = Helpers.$('#kanGrubu') as HTMLSelectElement | null;
   const alerjilerTextarea = Helpers.$('#alerjiler') as HTMLTextAreaElement | null;
   const kronikHastalikTextarea = Helpers.$('#kronikHastalik') as HTMLTextAreaElement | null;
-  const kucukYasGrubuSelect = Helpers.$('#kucukYasGrubu') as HTMLSelectElement | null;
 
   if (adSoyadInput) adSoyadInput.value = sporcu.temelBilgiler?.adSoyad || '';
   if (tcKimlikInput) tcKimlikInput.value = sporcu.temelBilgiler?.tcKimlik || '';
@@ -2411,7 +2590,7 @@ export function duzenle(id: number): void {
   if (kanGrubuSelect) kanGrubuSelect.value = sporcu.saglik?.kanGrubu || '';
   if (alerjilerTextarea) alerjilerTextarea.value = sporcu.saglik?.alerjiler || '';
   if (kronikHastalikTextarea) kronikHastalikTextarea.value = sporcu.saglik?.kronikHastalik || '';
-  if (kucukYasGrubuSelect) kucukYasGrubuSelect.value = sporcu.tffGruplari?.kucukGrup || '';
+  antrenmanGrubuSecenekleriniDoldur(sporcu.antrenmanGrubuId || '');
 
   // Yaş grubu
   const yasGrubuEl = Helpers.$('#autoYasGrubu');
@@ -2532,7 +2711,7 @@ export function duzenle(id: number): void {
       if (alerjilerTextarea) alerjilerTextarea.value = sporcu.saglik?.alerjiler || '';
       if (kronikHastalikTextarea)
         kronikHastalikTextarea.value = sporcu.saglik?.kronikHastalik || '';
-      if (kucukYasGrubuSelect) kucukYasGrubuSelect.value = sporcu.tffGruplari?.kucukGrup || '';
+      antrenmanGrubuSecenekleriniDoldur(sporcu.antrenmanGrubuId || '');
 
       // Yaş grubu
       if (yasGrubuEl) {
@@ -2660,31 +2839,41 @@ export function duzenle(id: number): void {
 }
 
 /**
- * Sporcu sil
+ * Sporcuyu arşivle (ayrıldı); aidat ve geçmiş kayıtlar korunur.
  * @param id - Sporcu ID
  */
 export function sil(id: number): void {
   const sporcu = Storage.sporcuBul(id);
   if (!sporcu) return;
+  if (sporcu.durum === 'Ayrıldı') {
+    Helpers.toast('Bu sporcu zaten arşivlenmiş (ayrıldı).', 'info');
+    return;
+  }
 
   const adSoyad = sporcu.temelBilgiler?.adSoyad || 'Sporcu';
   if (
     !Helpers.onay(
-      `"${adSoyad}" isimli sporcuyu silmek istediğinize emin misiniz?\n\nBu işlem geri alınamaz ve sporcuya ait tüm veriler (ödemeler, yoklamalar) silinecektir.`
+      `"${adSoyad}" kaydı arşivlenecek (ayrıldı).\n\nAidat ve tahsilat geçmişi silinmez; sporcu varsayılan listeden çıkar.\n\nDevam edilsin mi?`
     )
   ) {
     return;
   }
 
-  Storage.sporcuSil(id);
-  Helpers.toast('Sporcu silindi!', 'success');
+  const kendiMi = Helpers.onay(
+    `Ayrılma kaynağı:\n\nTamam = Öğrenci / veli kendi isteğiyle\nİptal = Okul / yönetici kaydı`
+  );
+  const kaynak: 'kendi' | 'yonetici' = kendiMi ? 'kendi' : 'yonetici';
+
+  Storage.sporcuAyrildi(id, kaynak);
+  Helpers.toast(
+    `Sporcu arşivlendi (${kendiMi ? 'kendi isteği' : 'yönetici'}). Muhasebe kayıtları korundu.`,
+    'success'
+  );
 
   listeyiGuncelle();
   bransFiltresiDoldur();
+  antrenmanGrubuSecenekleriniDoldur();
 
-  // Finansal bakiye güncellemesi: Dashboard'u güncelle (silinen aidat kayıtlarının finansal etkisi için)
-  // NOT: sporcuSil() fonksiyonu silinen aidat kayıtlarının finansal etkisini logluyor
-  // Dashboard modülü bu bilgiyi kullanarak bakiyeyi güncellemeli
   if (window.Dashboard && typeof window.Dashboard.guncelle === 'function') {
     window.Dashboard.guncelle();
   }
@@ -2692,6 +2881,35 @@ export function sil(id: number): void {
     window.Aidat.listeyiGuncelle();
   }
   if (window.Yoklama) window.Yoklama.listeyiGuncelle?.();
+}
+
+/**
+ * Arşivden (Ayrıldı) tekrar operasyonel listeye al — aidat geçmişi korunur.
+ */
+export function tekrarAktifEt(id: number): void {
+  const sporcu = Storage.sporcuBul(id);
+  if (!sporcu) return;
+  if (sporcu.durum !== 'Ayrıldı') {
+    Helpers.toast('Bu sporcu arşivlenmemiş; işlem gerekmiyor.', 'info');
+    return;
+  }
+  const ad = sporcu.temelBilgiler?.adSoyad || 'Sporcu';
+  if (
+    !Helpers.onay(
+      `"${ad}" tekrar aktif sporcu listesine alınsın mı?\n\n` +
+        `Ödeme günü, bugünün günü olarak ayarlanır; bu ay için henüz aidat borcu yoksa (burslu değilse) o aya borç yazılır. Geçmiş kayıtlar silinmez.`
+    )
+  ) {
+    return;
+  }
+  Storage.sporcuTekrarAktifEt(id);
+  Helpers.toast('Sporcu tekrar aktif listeye alındı.', 'success');
+  listeyiGuncelle();
+  bransFiltresiDoldur();
+  antrenmanGrubuSecenekleriniDoldur();
+  if (window.Dashboard?.guncelle) window.Dashboard.guncelle();
+  if (window.Aidat?.listeyiGuncelle) window.Aidat.listeyiGuncelle();
+  if (window.Yoklama?.listeyiGuncelle) window.Yoklama.listeyiGuncelle();
 }
 
 // ============================================================================
@@ -2940,20 +3158,20 @@ function wizardAdimValidate(step: number): boolean {
  * @param id - Sporcu ID
  */
 export function durumDegistir(id: number): void {
-  const sporcular = Storage.sporculariGetir();
-  const index = sporcular.findIndex(s => s.id === id);
-
-  if (index > -1 && sporcular[index]) {
-    const sporcu = sporcular[index];
-    sporcu.durum = sporcu.durum === 'Aktif' ? 'Pasif' : 'Aktif';
-    Storage.kaydet(Storage.STORAGE_KEYS.SPORCULAR, sporcular);
-
-    const yeniDurum = sporcu.durum;
-    Helpers.toast(`Sporcu durumu "${yeniDurum}" olarak güncellendi.`, 'success');
-
-    listeyiGuncelle();
-    if (window.Dashboard) window.Dashboard.guncelle();
+  const sporcu = Storage.sporcuBul(id);
+  if (!sporcu) return;
+  if (sporcu.durum === 'Ayrıldı') {
+    Helpers.toast('Arşivlenmiş sporcunun durumu buradan değiştirilemez.', 'info');
+    return;
   }
+  sporcu.durum = sporcu.durum === 'Aktif' ? 'Pasif' : 'Aktif';
+  Storage.sporcuKaydet(sporcu);
+
+  const yeniDurum = sporcu.durum;
+  Helpers.toast(`Sporcu durumu "${yeniDurum}" olarak güncellendi.`, 'success');
+
+  listeyiGuncelle();
+  if (window.Dashboard) window.Dashboard.guncelle();
 }
 
 /**
@@ -3021,10 +3239,25 @@ function createSporcuCard(
   const adSoyad = Helpers.escapeHtml(sporcu.temelBilgiler?.adSoyad || '-');
   const brans = Helpers.escapeHtml(sporcu.sporBilgileri?.brans || '-');
   const yasGrubu = Helpers.escapeHtml(sporcu.tffGruplari?.anaGrup || '-');
+  const antrenmanAd = sporcuAntrenmanAdi(sporcu);
+  const antrenmanEtiket = antrenmanAd ? Helpers.escapeHtml(antrenmanAd) : 'Antrenman yok';
+
+  const ayrildi = sporcu.durum === 'Ayrıldı';
+  const kaynakEtiket =
+    sporcu.silinmeBilgisi?.kaynak === 'kendi'
+      ? 'Kendi isteği'
+      : sporcu.silinmeBilgisi?.kaynak === 'yonetici'
+        ? 'Yönetici'
+        : '';
 
   // Durum için class (yoklama modülü gibi)
   const durumClass = sporcu.durum === 'Aktif' ? 'aktif' : 'pasif';
-  const durumText = sporcu.durum === 'Aktif' ? 'AKTİF' : 'PASİF';
+  const durumText =
+    sporcu.durum === 'Aktif'
+      ? 'AKTİF'
+      : ayrildi
+        ? `AYRILDI${kaynakEtiket ? ' · ' + kaynakEtiket : ''}`
+        : 'PASİF';
   const durumBadgeClass = sporcu.durum === 'Aktif' ? 'devam-var' : 'devam-yok';
 
   // Durum butonu için class ve icon
@@ -3032,14 +3265,15 @@ function createSporcuCard(
   const durumIcon = sporcu.durum === 'Aktif' ? 'fa-pause' : 'fa-play';
   const durumTitle = sporcu.durum === 'Aktif' ? 'Pasif Yap' : 'Aktif Yap';
 
-  // Kart class'ı (yoklama modülü gibi)
-  item.className = `sporcu-item ${durumClass}`;
+  // Kart class'ı (yoklama modülü gibi); güncel dönem aidat borcu → aidat ile aynı nabız
+  const borcPulse = sporcuGuncelDonemAidatBorclu(sporcu) ? ' sporcu-item-debt-pulse' : '';
+  item.className = `sporcu-item ${durumClass}${ayrildi ? ' ayrildi' : ''}${borcPulse}`.trim();
 
   // HTML oluştur - Yoklama modülü gibi kart görünümü
   item.innerHTML = `
     <div class="sporcu-info">
       <strong class="sporcu-adi">${adSoyad}</strong>
-      <span class="grup-badge">${yasGrubu} | ${brans}</span>
+      <span class="grup-badge" title="TFF yaş grubu · Branş · Kulüp antrenman grubu">${yasGrubu} · ${brans} · ${antrenmanEtiket}</span>
       <span class="devam-durum ${durumBadgeClass}">
         ${durumText}
       </span>
@@ -3051,9 +3285,19 @@ function createSporcuCard(
             <button class="btn btn-small btn-icon btn-warning" data-action="edit" data-sporcu-id="${sporcu.id}" title="Düzenle">
               <i class="fa-solid fa-pen-to-square"></i>
             </button>
+            ${
+              ayrildi
+                ? `
+            <button class="btn btn-small btn-icon btn-success" data-action="reactivate" data-sporcu-id="${sporcu.id}" title="Tekrar aktif listeye al">
+              <i class="fa-solid fa-user-check"></i>
+            </button>
+            `
+                : `
             <button class="btn btn-small btn-icon ${durumButtonClass}" data-action="toggle-status" data-sporcu-id="${sporcu.id}" title="${durumTitle}">
               <i class="fa-solid ${durumIcon}"></i>
             </button>
+            `
+            }
           <button class="btn btn-small btn-icon btn-info btn-rapor" data-action="rapor" data-sporcu-id="${sporcu.id}" title="Rapor">
             <i class="fa-solid fa-chart-line"></i>
           </button>
@@ -3061,9 +3305,9 @@ function createSporcuCard(
             : ''
         }
         ${
-          silebilir
+          silebilir && !ayrildi
             ? `
-            <button class="btn btn-small btn-icon btn-danger" data-action="delete" data-sporcu-id="${sporcu.id}" title="Sil">
+            <button class="btn btn-small btn-icon btn-danger" data-action="delete" data-sporcu-id="${sporcu.id}" title="Arşivle (muhasebe korunur)">
               <i class="fa-solid fa-trash-alt"></i>
             </button>
           `
@@ -3086,16 +3330,58 @@ function createSporcuCard(
 // ============================================================================
 
 /**
+ * Sporcu listesi filtrelerini varsayılana döndür (modül değişiminde Ayrıldı vb. kalmasın).
+ */
+export function listeFiltreleriniSifirla(): void {
+  const durumFiltre = Helpers.$('#durumFiltre') as HTMLSelectElement | null;
+  const bransFiltre = Helpers.$('#bransFiltre') as HTMLSelectElement | null;
+  const antrenmanGrubuFiltre = Helpers.$('#antrenmanGrubuFiltre') as HTMLSelectElement | null;
+  const searchBox = Helpers.$('#searchBox') as HTMLInputElement | null;
+  if (durumFiltre) durumFiltre.value = '';
+  if (bransFiltre) bransFiltre.value = '';
+  if (antrenmanGrubuFiltre) antrenmanGrubuFiltre.value = '';
+  if (searchBox) searchBox.value = '';
+  filterCache.lastSporcularHash = null;
+  filterCache.cachedResults = null;
+  listeyiGuncelle();
+}
+
+/**
+ * Sporcu listesi üstündeki özet kartlarını (toplam / aktif / pasif / branş) günceller.
+ * Arama veya tablo filtresinden bağımsız; tüm kayıt tabanına göre hesaplanır.
+ */
+function sporcuListesiOzetKartlariniGuncelle(sporcular: Sporcu[]): void {
+  const operasyonel = sporcular.filter(s => s.durum !== 'Ayrıldı');
+  const toplam = operasyonel.length;
+  const aktif = sporcular.filter(s => s.durum === 'Aktif').length;
+  const pasif = sporcular.filter(s => s.durum === 'Pasif').length;
+
+  const bransSet = new Set<string>();
+  for (const s of operasyonel) {
+    const b = (s.sporBilgileri?.brans || '').trim();
+    if (b) bransSet.add(b.toLowerCase());
+  }
+
+  const setVal = (sel: string, n: number) => {
+    const el = Helpers.$(sel);
+    if (el) el.textContent = String(n);
+  };
+
+  setVal('#summaryToplamSporcu', toplam);
+  setVal('#summaryAktifSporcu', aktif);
+  setVal('#summaryPasifSporcu', pasif);
+  setVal('#summaryBransSayisi', bransSet.size);
+}
+
+/**
  * Listeyi güncelle
  */
 export function listeyiGuncelle(): void {
-  console.log('🔄 [Sporcu] listeyiGuncelle() çağrıldı');
-
   try {
-    const listContainer = Helpers.$('#sporcuListesi');
+    const listContainer =
+      document.getElementById('sporcuListesi') ?? (Helpers.$('#sporcuListesi') as HTMLElement | null);
 
     if (!listContainer) {
-      console.warn('⚠️ [Sporcu] listeyiGuncelle - listContainer bulunamadı');
       return;
     }
 
@@ -3103,6 +3389,7 @@ export function listeyiGuncelle(): void {
     Helpers.hideEmptyState('#emptyState');
 
     const sporcular = Storage.sporculariGetir();
+    sporcuListesiOzetKartlariniGuncelle(sporcular);
 
     // Loading state göster (eğer mevcut kayıtlar varsa)
     if (sporcular.length > 0 && listContainer.children.length > 0) {
@@ -3115,9 +3402,11 @@ export function listeyiGuncelle(): void {
     const searchTerm = (searchBox?.value || '').trim().toLowerCase();
     const bransFiltre = Helpers.$('#bransFiltre') as HTMLSelectElement | null;
     const durumFiltre = Helpers.$('#durumFiltre') as HTMLSelectElement | null;
+    const antrenmanGrubuFiltre = Helpers.$('#antrenmanGrubuFiltre') as HTMLSelectElement | null;
     const bransFiltreValue = (bransFiltre?.value || '').trim();
     const durumFiltreValue = (durumFiltre?.value || '').trim();
-    const tableContainer = Helpers.$('.table-container');
+    const antrenmanGrubuFiltreValue = (antrenmanGrubuFiltre?.value || '').trim();
+    const tableContainer = Helpers.$('#sporcu-listesi .table-container');
 
     // Önce listContainer'ı opacity ile gizle (smooth transition)
     if (listContainer.children.length > 0) {
@@ -3137,9 +3426,9 @@ export function listeyiGuncelle(): void {
 
       // Cache geçerli mi kontrol et (searchTerm zaten lowercase)
       // Cache'i sadece aynı filtreler için kullan (performans için)
-      const cacheKey = `${searchTerm}_${bransFiltreValue}_${durumFiltreValue}`;
+      const cacheKey = `${searchTerm}_${bransFiltreValue}_${durumFiltreValue}_${antrenmanGrubuFiltreValue}`;
       const lastCacheKey = filterCache.cachedResults
-        ? `${filterCache.cachedResults.searchTerm}_${filterCache.cachedResults.bransFiltre}_${filterCache.cachedResults.durumFiltre}`
+        ? `${filterCache.cachedResults.searchTerm}_${filterCache.cachedResults.bransFiltre}_${filterCache.cachedResults.durumFiltre}_${filterCache.cachedResults.antrenmanGrubuFiltre}`
         : '';
 
       // Cache kontrolü: Hash ve key eşleşmeli
@@ -3180,11 +3469,31 @@ export function listeyiGuncelle(): void {
           const bransUygun =
             !bransFiltreValue ||
             (s.sporBilgileri?.brans?.toLowerCase() || '') === bransFiltreValue.toLowerCase();
-          // Durum filtresi (case-insensitive)
-          const durumUygun =
-            !durumFiltreValue || (s.durum?.toLowerCase() || '') === durumFiltreValue.toLowerCase();
+          // Durum: filtre boşken varsayılan listede "Ayrıldı" gösterme; "Ayrıldı" seçilince sadece onlar
+          const durumUygun = (() => {
+            const d = s.durum || '';
+            if (!durumFiltreValue) {
+              return d !== 'Ayrıldı';
+            }
+            return d === durumFiltreValue;
+          })();
+          const antrenmanUygun = (() => {
+            const v = antrenmanGrubuFiltreValue;
+            if (!v) return true;
+            if (v === '__none__') return !s.antrenmanGrubuId;
+            if (s.antrenmanGrubuId !== v) return false;
+            if (bransFiltreValue) {
+              const g = Storage.antrenmanGrubuBul(v);
+              if (g && (g.brans || '').trim()) {
+                const sb = (s.sporBilgileri?.brans || '').trim().toLowerCase();
+                const gb = g.brans!.trim().toLowerCase();
+                if (sb && gb !== sb) return false;
+              }
+            }
+            return true;
+          })();
 
-          return adUygun && bransUygun && durumUygun;
+          return adUygun && bransUygun && durumUygun && antrenmanUygun;
         });
 
         // Cache'i güncelle
@@ -3193,6 +3502,7 @@ export function listeyiGuncelle(): void {
           searchTerm,
           bransFiltre: bransFiltreValue,
           durumFiltre: durumFiltreValue,
+          antrenmanGrubuFiltre: antrenmanGrubuFiltreValue,
           filtrelenmis,
         };
       }
@@ -3241,7 +3551,7 @@ export function listeyiGuncelle(): void {
 
       // Skeleton'ı gizle
       if (tableContainer) {
-        Helpers.hideSkeleton('.table-container');
+        Helpers.hideSkeleton('#sporcu-listesi .table-container');
       }
 
       // Yetki kontrolleri (bir kez hesapla, tüm kartlar için kullan)
@@ -3271,11 +3581,12 @@ export function listeyiGuncelle(): void {
         listEl.style.overflow = 'visible';
         listEl.style.maxHeight = 'none';
 
-        // Table container'ın da scroll sorunlarını düzelt
+        /* Liste kart görünümü: iç scroll yok, sayfa ile uzar */
         if (tableContainer) {
-          (tableContainer as HTMLElement).style.overflowY = 'auto';
-          (tableContainer as HTMLElement).style.maxHeight = 'none';
-          (tableContainer as HTMLElement).style.minHeight = 'auto';
+          const tc = tableContainer as HTMLElement;
+          tc.style.overflow = 'visible';
+          tc.style.maxHeight = 'none';
+          tc.style.minHeight = 'auto';
         }
 
         // Pagination UI'ını güncelle (eğer sayfalama gerekliyse)
@@ -3304,7 +3615,7 @@ function updatePaginationUI(totalItems: number): void {
   }
 
   // Pagination container'ı bul veya oluştur
-  const tableContainer = Helpers.$('.table-container');
+  const tableContainer = Helpers.$('#sporcu-listesi .table-container');
   if (!tableContainer) return;
 
   let paginationEl = Helpers.$('#sporcuPagination');
@@ -3624,7 +3935,7 @@ function malzemeEventleri(): void {
       const target = e.target as HTMLElement;
       const btn = target.closest('#malzemeEkleBtn') as HTMLElement | null;
 
-      if (btn && (sporcuKayitView as HTMLElement).style.display !== 'none') {
+      if (btn && sporcuKayitView.classList.contains('active')) {
         e.preventDefault();
         e.stopPropagation();
         sporcuMalzemeEkleModalAc();
@@ -3842,6 +4153,10 @@ export function formEventleriniYenidenBagla(): void {
   // Normal event listener'ları ekle
   formEventleri();
 
+  const bransEl = Helpers.$('#brans') as HTMLSelectElement | null;
+  if (bransEl) delete bransEl.dataset.antrenmanGrupBound;
+  bransDegisinceAntrenmanGrubuBagla();
+
   // Eski kayıt butonunu gizle
   setTimeout(() => {
     const kayitTuruToggleBtn = Helpers.$('#kayitTuruToggle') as HTMLButtonElement | null;
@@ -3956,11 +4271,12 @@ function tarihAlanlariniOlustur(): void {
   eskiKayitTarihiLabels.forEach(label => {
     const labelText = (label.textContent || label.innerText || '').trim();
     // "Kayıt Tarihi" veya "Kayıt Tarihi *" yazan label'ları bul ve güncelle
-    // Ama "Aidat Başlangıç Tarihi" veya "Kulübe Kayıt Tarihi" içermemeli
+    // Ama "Aidat Başlangıç Tarihi" veya "Okula Kayıt Tarihi" (eski: Kulübe) içermemeli
     if (
       labelText.includes('Kayıt Tarihi') &&
       !labelText.includes('Aidat') &&
-      !labelText.includes('Kulübe')
+      !labelText.includes('Kulübe') &&
+      !labelText.includes('Okula')
     ) {
       // Label içindeki metni güncelle
       const asterisk = labelText.includes('*') ? ' *' : '';
@@ -4145,7 +4461,7 @@ function tarihAlanlariniOlustur(): void {
     }
   }
 
-  // Kulübe Kayıt Tarihi alanını kontrol et ve oluştur
+  // Okula Kayıt Tarihi alanını kontrol et ve oluştur
   let ilkKayitTarihiInput = Helpers.$('#ilkKayitTarihi') as HTMLInputElement | null;
   if (!ilkKayitTarihiInput) {
     // Kayıt tarihi alanını bul (referans noktası)
@@ -4179,7 +4495,7 @@ function tarihAlanlariniOlustur(): void {
         formGroup.innerHTML = `
           <label for="ilkKayitTarihi" style="display: block !important;">
             <i class="fa-solid fa-calendar-days"></i> 
-            Kulübe Kayıt Tarihi
+            Okula Kayıt Tarihi
             <span class="text-muted" style="font-size: 0.85em;">(Arşiv bilgisi - İsteğe bağlı)</span>
           </label>
           <input 
@@ -4188,10 +4504,10 @@ function tarihAlanlariniOlustur(): void {
             name="ilkKayitTarihi" 
             class="form-control"
             style="display: block !important; visibility: visible !important;"
-            title="Kulübe Kayıt Tarihi - Arşiv bilgisi (isteğe bağlı, düzenlenebilir)"
+            title="Okula Kayıt Tarihi - Arşiv bilgisi (isteğe bağlı, düzenlenebilir)"
           />
           <small class="form-text text-muted" style="display: block !important;">
-            Sporcu kulübe ne zaman kayıt oldu? (Sadece arşiv amaçlı, borç hesaplamasında kullanılmaz)
+            Sporcu okula ne zaman kayıt oldu? (Sadece arşiv amaçlı, borç hesaplamasında kullanılmaz)
           </small>
         `;
         // Kayıt tarihi container'ından sonra ekle
@@ -4213,7 +4529,7 @@ function tarihAlanlariniOlustur(): void {
             );
           }
           if (Helpers.Logger) {
-            Helpers.Logger.log('✅ [Sporcu] Kulübe Kayıt Tarihi alanı oluşturuldu');
+            Helpers.Logger.log('✅ [Sporcu] Okula Kayıt Tarihi alanı oluşturuldu');
           }
         });
       } else {
@@ -4224,7 +4540,7 @@ function tarihAlanlariniOlustur(): void {
     } else {
       if (Helpers.Logger) {
         Helpers.Logger.warn(
-          '[Sporcu] Kayıt tarihi alanı bulunamadı, Kulübe Kayıt Tarihi eklenemedi'
+          '[Sporcu] Kayıt tarihi alanı bulunamadı, Okula Kayıt Tarihi eklenemedi'
         );
       }
     }
@@ -4517,9 +4833,12 @@ interface SporcuDetayRaporu {
     devamOrani: number;
   };
   finansal: {
+    /** Net ödenecek tutar (outstanding balance) */
     toplamBorc: number;
-    aidatBorcu: number;
-    malzemeBorcu: number;
+    tahakkukAidat: number;
+    tahakkukMalzeme: number;
+    tahsilatToplam: number;
+    fazlaOdeme: number;
     sonOdemeTarihi: string | null;
     odemeGecmisi: Array<{
       donem: string;
@@ -4528,6 +4847,37 @@ interface SporcuDetayRaporu {
       odemeTarihi: string | null;
     }>;
   };
+}
+
+/**
+ * Yoklama `grup` alanı `v2:` + JSON biçiminde saklanabilir (yoklama oturum anahtarı).
+ * Rapor ve PDF’de ham JSON yerine okunaklı tek satır üretir.
+ */
+function yoklamaGrupEtiketiRapor(raw: string): string {
+  const s = (raw ?? '').trim();
+  if (!s) return '';
+  if (!s.startsWith('v2:')) return s;
+  try {
+    const o = JSON.parse(s.slice(3)) as {
+      b: string | null;
+      t: string | null;
+      g: string | null;
+    };
+    const parcalar: string[] = [];
+    if (o.b) parcalar.push(o.b);
+    if (o.t && o.t !== 'all') parcalar.push(o.t);
+    if (o.g && o.g !== 'all') {
+      if (o.g === '__none__') {
+        parcalar.push('Antrenman grubu atanmamış');
+      } else {
+        const ag = Storage.antrenmanGrubuBul(o.g);
+        parcalar.push(ag?.ad ?? o.g);
+      }
+    }
+    return parcalar.length > 0 ? parcalar.join(' · ') : '—';
+  } catch {
+    return s;
+  }
 }
 
 /**
@@ -4552,13 +4902,13 @@ function sporcuDetayRaporu(sporcuId: number): SporcuDetayRaporu | null {
           geldigiGunler.push({
             tarih: y.tarih,
             durum: kayit.durum,
-            grup: y.grup,
+            grup: yoklamaGrupEtiketiRapor(typeof y.grup === 'string' ? y.grup : ''),
           });
         } else if (kayit.durum === 'yok') {
           gelmedigiGunler.push({
             tarih: y.tarih,
             durum: 'yok',
-            grup: y.grup,
+            grup: yoklamaGrupEtiketiRapor(typeof y.grup === 'string' ? y.grup : ''),
           });
         }
       }
@@ -4568,34 +4918,21 @@ function sporcuDetayRaporu(sporcuId: number): SporcuDetayRaporu | null {
     geldigiGunler.sort((a, b) => new Date(b.tarih).getTime() - new Date(a.tarih).getTime());
     gelmedigiGunler.sort((a, b) => new Date(b.tarih).getTime() - new Date(a.tarih).getTime());
 
-    // Finansal bilgiler
-    // KRİTİK: Gelecek aylar için oluşturulan borç kayıtları (zam sonrası) mevcut borç hesaplamalarına dahil edilmemeli
-    const bugunTarih = new Date();
-    const buAy = bugunTarih.getMonth() + 1;
-    const buYil = bugunTarih.getFullYear();
     const sporcuAidatlari = aidatlar.filter(a => a.sporcuId === sporcuId);
-    let toplamBorc = 0;
-    let aidatBorcu = 0;
-    let malzemeBorcu = 0;
-    let sonOdemeTarihi: string | null = null;
 
+    // Merkezi hesap: tahakkuk (brüt) kalemleri + tahsilat → net ödenecek / fazla ödeme
+    const fin = Helpers.finansalHesapla(aidatlar, sporcuId);
+
+    let sonOdemeTarihi: string | null = null;
     sporcuAidatlari.forEach(a => {
-      const tutar = a.tutar || 0;
-      if (tutar > 0) {
-        // Gelecek aylar için borç kayıtlarını hariç tut
-        if (!Helpers.gelecekAylarFiltresi(a, buAy, buYil)) {
-          return; // Gelecek ay Aidat borçlarını hariç tut
-        }
-        // Borç (geçmiş ve mevcut ay borçları)
-        toplamBorc += tutar;
-        if (a.islem_turu === 'Malzeme') {
-          malzemeBorcu += tutar;
-        } else {
-          aidatBorcu += tutar;
-        }
-      } else if (tutar < 0 && !sonOdemeTarihi) {
-        // Son ödeme tarihi (ilk negatif tutar = ödeme)
-        sonOdemeTarihi = a.tarih || null;
+      const tahsilatMi = (a.tutar || 0) < 0 || a.islem_turu === 'Tahsilat';
+      if (!tahsilatMi) return;
+      const tarihStr = a.odemeTarihi || a.tarih;
+      if (!tarihStr) return;
+      const d = new Date(tarihStr).getTime();
+      if (Number.isNaN(d)) return;
+      if (!sonOdemeTarihi || d > new Date(sonOdemeTarihi).getTime()) {
+        sonOdemeTarihi = tarihStr;
       }
     });
 
@@ -4608,16 +4945,30 @@ function sporcuDetayRaporu(sporcuId: number): SporcuDetayRaporu | null {
       const yil = tarih.getFullYear();
       const donem = `${Helpers.ayAdi(ay)} ${yil}`;
 
-      // Bu dönem için aidat kayıtlarını bul (sadece borç kayıtları - pozitif tutarlar)
-      const donemBorclari = sporcuAidatlari.filter(
+      // Dönem borç / tahakkuk satırları (Aidat + Malzeme + türsüz eski kayıtlar) — `finansalHesapla` ile uyumlu
+      const donemBorcSatirlari = sporcuAidatlari.filter(
         a =>
           a.donemAy === ay &&
           a.donemYil === yil &&
-          (a.islem_turu === 'Aidat' || !a.islem_turu) &&
-          (a.tutar || 0) > 0 // Sadece borç kayıtları
+          (a.tutar || 0) > 0 &&
+          (a.islem_turu === 'Aidat' || a.islem_turu === 'Malzeme' || !a.islem_turu)
       );
 
-      // Bu dönem için ödeme kayıtlarını bul (negatif tutarlar veya ödeme durumu)
+      const beklenenTutar = donemBorcSatirlari.reduce((sum, a) => sum + (a.tutar || 0), 0);
+
+      // Bu döneme yazılmış tahsilatlar (PDF / liste tutarı: borç yoksa ödenen tutar gösterilir)
+      const donemTahsilatSatirlari = sporcuAidatlari.filter(
+        a =>
+          a.donemAy === ay &&
+          a.donemYil === yil &&
+          ((a.tutar || 0) < 0 || a.islem_turu === 'Tahsilat')
+      );
+      const tahsilatDonemToplam = donemTahsilatSatirlari.reduce(
+        (sum, a) => sum + Math.abs(a.tutar || 0),
+        0
+      );
+
+      // Ödeme / kapanış: tahsilat satırı, veya borç satırında Ödendi
       const donemOdemeleri = sporcuAidatlari.filter(
         a =>
           a.donemAy === ay &&
@@ -4625,13 +4976,29 @@ function sporcuDetayRaporu(sporcuId: number): SporcuDetayRaporu | null {
           ((a.tutar || 0) < 0 || a.odemeDurumu === 'Ödendi' || a.islem_turu === 'Tahsilat')
       );
 
-      const tutar = donemBorclari.reduce((sum, a) => sum + (a.tutar || 0), 0);
       const odendi =
-        donemOdemeleri.length > 0 || donemBorclari.some(a => a.odemeDurumu === 'Ödendi');
-      const odemeTarihi =
-        donemOdemeleri.length > 0
-          ? donemOdemeleri[0].odemeTarihi || donemOdemeleri[0].tarih || null
-          : null;
+        donemOdemeleri.length > 0 || donemBorcSatirlari.some(a => a.odemeDurumu === 'Ödendi');
+
+      /** Görünen tutar: önce dönem tahakkuku; yoksa yalnız tahsilat varsa o dönemin tahsilatı (0 TL Ödendi hatasını önler) */
+      const tutar =
+        beklenenTutar > 0 ? beklenenTutar : tahsilatDonemToplam > 0 ? tahsilatDonemToplam : 0;
+
+      let odemeTarihi: string | null = null;
+      if (donemTahsilatSatirlari.length > 0) {
+        let enSon = 0;
+        for (const a of donemTahsilatSatirlari) {
+          const raw = a.odemeTarihi || a.tarih;
+          if (!raw) continue;
+          const ts = new Date(raw).getTime();
+          if (!Number.isNaN(ts) && ts >= enSon) {
+            enSon = ts;
+            odemeTarihi = raw;
+          }
+        }
+      }
+      if (!odemeTarihi && donemOdemeleri.length > 0) {
+        odemeTarihi = donemOdemeleri[0].odemeTarihi || donemOdemeleri[0].tarih || null;
+      }
 
       // Sadece borç varsa veya ödeme yapılmışsa göster
       if (tutar > 0 || odendi) {
@@ -4659,9 +5026,11 @@ function sporcuDetayRaporu(sporcuId: number): SporcuDetayRaporu | null {
         ),
       },
       finansal: {
-        toplamBorc,
-        aidatBorcu,
-        malzemeBorcu,
+        toplamBorc: fin.kalanBorc,
+        tahakkukAidat: fin.tahakkukAidat,
+        tahakkukMalzeme: fin.tahakkukMalzeme,
+        tahsilatToplam: fin.toplamTahsilat,
+        fazlaOdeme: fin.fazlaOdeme,
         sonOdemeTarihi,
         odemeGecmisi,
       },
@@ -5211,17 +5580,30 @@ function raporRender(rapor: SporcuDetayRaporu): void {
         </div>
         <div class="rapor-card-body">
           <div class="rapor-stat">
-            <span class="rapor-stat-label">Toplam Borç</span>
-            <span class="rapor-stat-value ${rapor.finansal.toplamBorc > 0 ? 'text-danger' : 'text-success'}">${Helpers.paraFormat(rapor.finansal.toplamBorc)} TL</span>
+            <span class="rapor-stat-label">Aidat (tahakkuk)</span>
+            <span class="rapor-stat-value">${Helpers.paraFormat(rapor.finansal.tahakkukAidat)} TL</span>
           </div>
           <div class="rapor-stat">
-            <span class="rapor-stat-label">Aidat</span>
-            <span class="rapor-stat-value">${Helpers.paraFormat(rapor.finansal.aidatBorcu)} TL</span>
+            <span class="rapor-stat-label">Malzeme (tahakkuk)</span>
+            <span class="rapor-stat-value">${Helpers.paraFormat(rapor.finansal.tahakkukMalzeme)} TL</span>
           </div>
           <div class="rapor-stat">
-            <span class="rapor-stat-label">Malzeme</span>
-            <span class="rapor-stat-value">${Helpers.paraFormat(rapor.finansal.malzemeBorcu)} TL</span>
+            <span class="rapor-stat-label">Tahsilat</span>
+            <span class="rapor-stat-value">${Helpers.paraFormat(rapor.finansal.tahsilatToplam)} TL</span>
           </div>
+          <div class="rapor-stat rapor-stat--net">
+            <span class="rapor-stat-label">Ödenecek bakiye</span>
+            <span class="rapor-stat-value ${rapor.finansal.toplamBorc > 0 ? 'text-danger' : 'text-success'}">${rapor.finansal.toplamBorc === 0 ? '—' : `${Helpers.paraFormat(rapor.finansal.toplamBorc)} TL`}</span>
+          </div>
+          ${
+            rapor.finansal.fazlaOdeme > 0
+              ? `
+          <div class="rapor-stat">
+            <span class="rapor-stat-label">Fazla ödeme (alacak)</span>
+            <span class="rapor-stat-value text-success">${Helpers.paraFormat(rapor.finansal.fazlaOdeme)} TL</span>
+          </div>`
+              : ''
+          }
         </div>
       </div>
     </div>
@@ -5605,16 +5987,9 @@ function raporRender(rapor: SporcuDetayRaporu): void {
       return;
     }
 
-    // Tarih ve saat bilgileri
-    const simdi = new Date();
-    const tarih = simdi.toLocaleDateString('tr-TR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      weekday: 'long',
-    });
-    const saat = simdi.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-    const raporNo = `ATH-${simdi.getFullYear()}${String(simdi.getMonth() + 1).padStart(2, '0')}${String(simdi.getDate()).padStart(2, '0')}-${String(Date.now()).slice(-6)}`;
+    const docMeta = buildReportDocumentMeta();
+    const logoSrc = Helpers.soybisLogoUrl();
+    const sporcuAdiGuvenli = reportEscapeHtml(sporcuAdi);
 
     // Mevcut DOM'u kopyala ve temizle
     const raporClone = raporContent.cloneNode(true) as HTMLElement;
@@ -5731,7 +6106,8 @@ function raporRender(rapor: SporcuDetayRaporu): void {
           if (tarihEl && durumEl) {
             const tarih = tarihEl.textContent?.trim() || '';
             const durum = durumEl.textContent?.trim() || '';
-            const grup = grupEl?.textContent?.trim() || '';
+            const grupRaw = grupEl?.textContent?.trim() || '';
+            const grup = yoklamaGrupEtiketiRapor(grupRaw);
             const deger = `${durum}${grup ? ` - ${grup}` : ''}`;
             veriler.push({ label: tarih, deger, tip: 'normal' });
           }
@@ -5777,6 +6153,50 @@ function raporRender(rapor: SporcuDetayRaporu): void {
     const sonKartlar = kartlar.filter(k => ozetKartlar.includes(k.baslik));
     const siraliKartlar = [...normalKartlar, ...sonKartlar];
 
+    const raporSporcuId =
+      lastRaporSporcuId ??
+      (() => {
+        const raw =
+          typeof localStorage !== 'undefined' ? localStorage.getItem('lastRaporSporcuId') : null;
+        return raw ? parseInt(raw, 10) : 0;
+      })();
+    if (raporSporcuId > 0) {
+      const fresh = sporcuDetayRaporu(raporSporcuId);
+      if (fresh) {
+        const f = fresh.finansal;
+        const fmt = (n: number) => `${Helpers.paraFormat(n)} TL`;
+        const finVeriler: Array<{
+          label: string;
+          deger: string;
+          tip?: 'positive' | 'negative' | 'normal';
+        }> = [
+          { label: 'Aidat (tahakkuk)', deger: fmt(f.tahakkukAidat), tip: 'normal' },
+          { label: 'Malzeme (tahakkuk)', deger: fmt(f.tahakkukMalzeme), tip: 'normal' },
+          { label: 'Tahsilat', deger: fmt(f.tahsilatToplam), tip: 'normal' },
+          {
+            label: 'Ödenecek bakiye',
+            deger: f.toplamBorc === 0 ? '—' : fmt(f.toplamBorc),
+            tip: f.toplamBorc > 0 ? 'negative' : 'positive',
+          },
+        ];
+        if (f.fazlaOdeme > 0) {
+          finVeriler.push({
+            label: 'Fazla ödeme (alacak)',
+            deger: fmt(f.fazlaOdeme),
+            tip: 'positive',
+          });
+        }
+        const fi = siraliKartlar.findIndex(k => k.baslik === 'Finansal Durum');
+        if (fi >= 0) {
+          siraliKartlar[fi] = {
+            baslik: 'Finansal Durum',
+            veriler: finVeriler,
+            tip: 'grid',
+          };
+        }
+      }
+    }
+
     // Debug log
     console.log('📊 Sporcu PDF Veri Toplama:', {
       kartSayisi: siraliKartlar.length,
@@ -5790,472 +6210,238 @@ function raporRender(rapor: SporcuDetayRaporu): void {
 
     // Eğer hiç kart bulunamadıysa
     if (siraliKartlar.length === 0) {
-      console.warn('⚠️ PDF: Sporcu rapor kartları bulunamadı!', {
+      console.info('PDF: Sporcu kartları parse edilemedi, özet fallback hazırlanıyor.', {
         raporContent: !!raporContent,
         cards: raporContent?.querySelectorAll('.rapor-card').length || 0,
         innerHTML: raporContent?.innerHTML.substring(0, 200),
       });
+      const allText = (raporContent?.textContent || '').replace(/\s+/g, ' ').trim();
+      if (allText.length > 50) {
+        siraliKartlar.push({
+          baslik: 'Rapor Özeti',
+          veriler: [{ label: 'İçerik', deger: allText.substring(0, 1200), tip: 'normal' }],
+          tip: 'table',
+        });
+      }
     }
 
     // Eğer kartlar boşsa, mevcut DOM'u direkt kullan
     if (siraliKartlar.length === 0) {
-      console.warn('⚠️ PDF: Sporcu veri toplama başarısız, DOM direkt kullanılıyor...');
+      console.info('PDF: Sporcu DOM fallback akışı kullanılıyor.');
       // Mevcut içeriği direkt kullan
       const tempDiv = document.createElement('div');
-      tempDiv.style.position = 'fixed';
-      tempDiv.style.top = '0';
-      tempDiv.style.left = '0';
-      tempDiv.style.width = '210mm';
+      tempDiv.style.width = pdfExportRootWidthMm(PDF_EXPORT_MARGIN_MM);
       tempDiv.style.background = '#ffffff';
-      tempDiv.style.zIndex = '99999';
       tempDiv.style.overflow = 'visible';
       tempDiv.style.padding = '20mm 15mm';
       tempDiv.style.fontFamily = "'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
       tempDiv.style.fontSize = '10pt';
       tempDiv.style.color = '#1a202c';
       tempDiv.style.lineHeight = '1.6';
+      stylePdfExportCaptureRoot(tempDiv);
 
       // Header ekle
       const header = document.createElement('div');
-      header.style.borderBottom = '4px solid #c45c3e';
-      header.style.paddingBottom = '15px';
-      header.style.marginBottom = '25px';
+      header.style.borderBottom = '1px solid #cbd5e1';
+      header.style.paddingBottom = '10px';
+      header.style.marginBottom = '16px';
       header.innerHTML = `
-      <div style="text-align: center;">
-        <div style="font-size: 20pt; font-weight: 700; color: #1a365d; margin-bottom: 5px;">${sporcuAdi}</div>
-        <div style="font-size: 11pt; color: #4a5568; margin-bottom: 8px;">Öğrenci Detay Raporu</div>
-        <div style="font-size: 9pt; color: #718096;">Rapor No: ${raporNo} | ${tarih} ${saat}</div>
+      <div style="display:flex; align-items:center; justify-content:flex-start; gap:10px; flex-wrap:wrap;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <img src="${logoSrc}" alt="SOYBIS 360°" width="42" height="42" style="object-fit:contain; display:block;" crossorigin="anonymous" />
+          <div>
+            <div style="font-size:11.5pt; font-weight:700; letter-spacing:0.03em; color:#0f172a;">SOYBIS 360°</div>
+            <div style="font-size:8.8pt; color:#475569;">Spor Okulları Yönetim Bilgi Sistemi</div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:10px; padding-top:8px; border-top:1px solid #e2e8f0;">
+        <div style="font-size:15pt; font-weight:700; color:#0f172a; letter-spacing:-0.01em;">${sporcuAdiGuvenli}</div>
+        <div style="font-size:8.5pt; color:#64748b; margin-top:2px;">SOYBIS Resmi Rapor Formatı</div>
       </div>
     `;
       tempDiv.appendChild(header);
 
       // İçeriği ekle
+      raporClone.querySelectorAll('.rapor-card, .rapor-list li').forEach(el => {
+        const node = el as HTMLElement;
+        node.style.border = 'none';
+        node.style.boxShadow = 'none';
+        node.style.background = 'transparent';
+        node.style.borderRadius = '0';
+        node.style.color = '#000000';
+      });
+      raporClone.querySelectorAll('.rapor-list li').forEach(el => {
+        const node = el as HTMLElement;
+        node.style.borderTop = '1px solid #111111';
+        node.style.borderBottom = '1px solid #111111';
+        node.style.padding = '6px 0';
+        node.style.margin = '0';
+      });
+      raporClone
+        .querySelectorAll('.rapor-label, .rapor-deger, .financial-positive, .financial-negative')
+        .forEach(el => {
+          const node = el as HTMLElement;
+          node.style.color = '#000000';
+        });
       tempDiv.appendChild(raporClone);
 
       // Footer ekle
       const footer = document.createElement('div');
-      footer.style.marginTop = '30px';
-      footer.style.paddingTop = '15px';
+      footer.style.marginTop = '8px';
+      footer.style.paddingTop = '6px';
       footer.style.borderTop = '1px solid #e2e8f0';
       footer.style.textAlign = 'center';
       footer.style.fontSize = '8pt';
       footer.style.color = '#718096';
+      footer.style.pageBreakInside = 'avoid';
+      footer.style.breakInside = 'avoid';
+      footer.style.pageBreakBefore = 'avoid';
+      footer.style.breakBefore = 'avoid-page';
       footer.innerHTML = `
-      <div>SOY-BIS v3.0 - Spor Okulları Yönetim Bilgi Sistemi</div>
-      <div>Bu rapor elektronik ortamda oluşturulmuştur ve yasal geçerliliğe sahiptir.</div>
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;font-size:7.5pt;color:#64748b;border-top:1px solid #cbd5e1;padding-top:12px;margin-top:16px;">
+        <div><strong style="color:#0f172a;">SOYBIS 360°</strong> · Yalnızca kurum içi kullanım</div>
+        <div style="font-family:ui-monospace,monospace;font-size:7pt;">${docMeta.iso8601Utc}</div>
+      </div>
     `;
       tempDiv.appendChild(footer);
 
-      document.body.appendChild(tempDiv);
-
-      // Render bekle ve PDF oluştur
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          const opt = {
-            margin: 0,
-            filename: `Athlete_Report_${sporcuAdi.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
-            image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: {
-              scale: 2,
-              useCORS: true,
-              letterRendering: true,
-              logging: false,
-              width: 794,
-              height: tempDiv.scrollHeight,
-            },
-            jsPDF: {
-              unit: 'mm',
-              format: 'a4',
-              orientation: 'portrait',
-              compress: true,
-            },
-            pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-          };
-
-          (window as any)
-            .html2pdf()
-            .set(opt)
-            .from(tempDiv)
-            .save()
-            .then(() => {
-              document.body.removeChild(tempDiv);
-              Helpers.toast('PDF başarıyla indirildi!', 'success');
-            })
-            .catch((error: Error) => {
-              console.error('PDF oluşturma hatası:', error);
-              document.body.removeChild(tempDiv);
-              Helpers.toast('PDF oluşturulurken hata oluştu!', 'error');
-              window.print();
-            });
-        }, 800);
-      });
+      void (async () => {
+        try {
+          await runPdfExportWithRuntime({
+            tempDiv,
+            logoSrc,
+            marginMm: [...PDF_EXPORT_MARGIN_MM],
+            buildOptions: (w, h) => ({
+              margin: [...PDF_EXPORT_MARGIN_MM],
+              filename: `Athlete_Report_${sporcuAdi.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+              image: { type: 'jpeg', quality: 0.98 },
+              html2canvas: {
+                scale: getHtml2PdfCanvasScale(),
+                useCORS: true,
+                letterRendering: true,
+                logging: false,
+                width: w,
+                height: h,
+                windowWidth: w,
+                windowHeight: h,
+              },
+              jsPDF: {
+                unit: 'mm',
+                format: 'a4',
+                orientation: 'portrait',
+                compress: true,
+              },
+              pagebreak: { ...PDF_HTML2PDF_PAGE_BREAK },
+            }),
+          });
+          Helpers.toast('PDF başarıyla indirildi!', 'success');
+        } catch (error: unknown) {
+          console.error('PDF oluşturma hatası:', error);
+          Helpers.toast('PDF oluşturulurken hata oluştu!', 'error');
+          window.print();
+        }
+      })();
       return;
     }
 
-    // Profesyonel PDF HTML template
+    /* html2pdf köküne tam belge yazmak head stillerini düşürebilir; rapor modülü gibi yalnızca stil + gövde parçası */
+    const sporcuRaporPdfExtraStyles = `
+.pdf-page--sporcu-detay {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-wrap: break-word;
+}
+.pdf-page--sporcu-detay .pdf-h1 {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.pdf-page--sporcu-detay .pdf-stats-grid {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+.pdf-page--sporcu-detay .pdf-stat-card,
+.pdf-page--sporcu-detay .pdf-stat-label,
+.pdf-page--sporcu-detay .pdf-stat-value {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.pdf-page--sporcu-detay .pdf-stat-value {
+  font-size: 14pt;
+  line-height: 1.25;
+}
+.pdf-page--sporcu-detay .pdf-table {
+  table-layout: fixed;
+  width: 100%;
+}
+.pdf-page--sporcu-detay .pdf-td-label,
+.pdf-page--sporcu-detay .pdf-td-value {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.pdf-page--sporcu-detay .pdf-footer-left {
+  max-width: 50%;
+}
+.pdf-page--sporcu-detay .pdf-footer-right {
+  white-space: normal !important;
+  max-width: 48%;
+  text-align: right;
+}
+/* Bölüm başlığı çizgisi + tablo thead üst çizgisi üst üste binmesin (boş satır hissi) */
+.pdf-page--sporcu-detay .pdf-section .pdf-h2 {
+  border-bottom: none;
+  margin-bottom: 6px;
+  padding-bottom: 2px;
+}
+.pdf-page--sporcu-detay .pdf-table thead th {
+  border-top: 1px solid #111111 !important;
+}
+`;
+
     const pdfHTML = `
-<!DOCTYPE html>
-<html lang="tr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${sporcuAdi} - Sporcu Detay Raporu</title>
-  <style>
-    @page {
-      size: A4;
-      margin: 0;
-    }
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    body {
-      font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-      font-size: 10pt;
-      line-height: 1.6;
-      color: #1a202c;
-      background: #ffffff;
-      padding: 0;
-    }
-    .pdf-page {
-      width: 210mm;
-      min-height: 297mm;
-      background: #ffffff;
-      position: relative;
-      display: flex;
-      flex-direction: column;
-    }
-    /* CV-Style Header - Kompakt */
-    .pdf-header {
-      background: linear-gradient(135deg, #1a365d 0%, #2d3748 100%);
-      color: #ffffff;
-      padding: 10mm 20mm 8mm 20mm;
-      position: relative;
-      overflow: hidden;
-    }
-    .pdf-header::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      right: 0;
-      width: 120px;
-      height: 120px;
-      background: rgba(196, 92, 62, 0.1);
-      border-radius: 50%;
-      transform: translate(30%, -30%);
-    }
-    .pdf-header-content {
-      position: relative;
-      z-index: 1;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .pdf-header-left {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .pdf-logo-area {
-      width: 50px;
-      height: 50px;
-      background: rgba(255, 255, 255, 0.15);
-      border: 2px solid rgba(255, 255, 255, 0.3);
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 24px;
-      backdrop-filter: blur(10px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-      flex-shrink: 0;
-    }
-    .pdf-header-text {
-      flex: 1;
-    }
-    .pdf-title {
-      font-size: 18pt;
-      font-weight: 800;
-      color: #ffffff;
-      margin-bottom: 2px;
-      letter-spacing: -0.5px;
-      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-      line-height: 1.1;
-    }
-    .pdf-subtitle {
-      font-size: 9pt;
-      color: rgba(255, 255, 255, 0.9);
-      font-weight: 400;
-      line-height: 1.2;
-    }
-    .pdf-header-right {
-      text-align: right;
-      font-size: 8pt;
-      color: rgba(255, 255, 255, 0.85);
-      line-height: 1.4;
-      flex-shrink: 0;
-    }
-    .pdf-header-right strong {
-      color: #ffffff;
-      font-weight: 600;
-      display: block;
-      margin-bottom: 0px;
-    }
-    .pdf-meta {
-      font-size: 9pt;
-      color: #718096;
-      line-height: 1.6;
-    }
-    .pdf-meta strong {
-      color: #2d3748;
-      font-weight: 600;
-    }
-    /* Content Area */
-    .pdf-content {
-      padding: 20mm;
-      flex: 1;
-    }
-    /* CV-Style Section - Page Break Optimized */
-    .pdf-section {
-      margin-bottom: 25px;
-      page-break-inside: avoid;
-      break-inside: avoid;
-      orphans: 3;
-      widows: 3;
-    }
-    .pdf-section-title {
-      font-size: 16pt;
-      font-weight: 700;
-      color: #1a365d;
-      margin-bottom: 12px;
-      padding-bottom: 8px;
-      border-bottom: 3px solid #c45c3e;
-      position: relative;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      page-break-after: avoid;
-      break-after: avoid;
-    }
-    .pdf-section-title + * {
-      page-break-before: avoid;
-      break-before: avoid;
-    }
-    .pdf-section-title::before {
-      content: '';
-      width: 5px;
-      height: 24px;
-      background: linear-gradient(180deg, #c45c3e 0%, #e07b5a 100%);
-      border-radius: 3px;
-      box-shadow: 0 2px 4px rgba(196, 92, 62, 0.3);
-    }
-    .pdf-table {
-      width: 100%;
-      border-collapse: separate;
-      border-spacing: 0;
-      margin-bottom: 20px;
-      background: #ffffff;
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-    }
-    .pdf-table thead {
-      background: linear-gradient(135deg, #1a365d 0%, #2d3748 100%);
-      color: #ffffff;
-    }
-    .pdf-table th {
-      padding: 14px 16px;
-      text-align: left;
-      font-weight: 600;
-      font-size: 9.5pt;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      border-right: 1px solid rgba(255, 255, 255, 0.15);
-    }
-    .pdf-table th:first-child {
-      padding-left: 20px;
-    }
-    .pdf-table th:last-child {
-      border-right: none;
-      padding-right: 20px;
-    }
-    .pdf-table td {
-      padding: 14px 16px;
-      border-bottom: 1px solid #f0f4f8;
-      font-size: 10pt;
-      transition: background 0.2s;
-    }
-    .pdf-table td:first-child {
-      padding-left: 20px;
-    }
-    .pdf-table td:last-child {
-      padding-right: 20px;
-    }
-    .pdf-table tbody tr {
-      transition: background 0.2s;
-    }
-    .pdf-table tbody tr:nth-child(even) {
-      background: #f8fafc;
-    }
-    .pdf-table tbody tr:hover {
-      background: #f0f7ff;
-    }
-    .pdf-table tbody tr:last-child td {
-      border-bottom: none;
-    }
-    .pdf-label {
-      font-weight: 600;
-      color: #2d3748;
-      width: 40%;
-    }
-    .pdf-value {
-      color: #1a365d;
-      font-weight: 500;
-    }
-    .pdf-value.positive {
-      color: #38a169;
-      font-weight: 600;
-    }
-    .pdf-value.negative {
-      color: #e53e3e;
-      font-weight: 600;
-    }
-    /* Stats Grid (for summary cards) */
-    .pdf-stats-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 15px;
-      margin-bottom: 20px;
-    }
-    .pdf-stat-card {
-      background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
-      border: 2px solid #e2e8f0;
-      border-radius: 10px;
-      padding: 18px;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-    .pdf-stat-label {
-      font-size: 9pt;
-      color: #718096;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 8px;
-    }
-    .pdf-stat-value {
-      font-size: 20pt;
-      font-weight: 700;
-      color: #1a365d;
-    }
-    .pdf-stat-value.positive {
-      color: #38a169;
-    }
-    .pdf-stat-value.negative {
-      color: #e53e3e;
-    }
-    /* Footer */
-    .pdf-footer {
-      background: #f8fafc;
-      border-top: 2px solid #e2e8f0;
-      padding: 12mm 20mm;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 8pt;
-      color: #718096;
-      margin-top: auto;
-    }
-    .pdf-footer-left {
-      text-align: left;
-      line-height: 1.6;
-    }
-    .pdf-footer-right {
-      text-align: right;
-      line-height: 1.6;
-    }
-    .pdf-page-number {
-      font-weight: 700;
-      color: #4a5568;
-      font-size: 9pt;
-    }
-    .pdf-footer-brand {
-      font-weight: 600;
-      color: #1a365d;
-    }
-    /* Print optimizations - Prevent orphaned content */
-    @media print {
-      .pdf-page {
-        page-break-after: always;
-      }
-      .pdf-page:last-child {
-        page-break-after: auto;
-      }
-      .pdf-table {
-        page-break-inside: avoid;
-        break-inside: avoid;
-      }
-      .pdf-table thead {
-        display: table-header-group;
-      }
-      .pdf-table tbody tr {
-        page-break-inside: avoid;
-        break-inside: avoid;
-      }
-      .pdf-table tbody tr:first-child {
-        page-break-before: avoid;
-        break-before: avoid;
-      }
-      .pdf-stats-grid {
-        page-break-inside: avoid;
-        break-inside: avoid;
-      }
-      .pdf-stat-card {
-        page-break-inside: avoid;
-        break-inside: avoid;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="pdf-page">
-    <!-- CV-Style Header -->
-    <div class="pdf-header">
-      <div class="pdf-header-content">
-        <div class="pdf-header-left">
-          <div class="pdf-logo-area">⚽</div>
-          <div class="pdf-header-text">
-            <div class="pdf-title">${sporcuAdi}</div>
-            <div class="pdf-subtitle">Öğrenci Detay Raporu</div>
+<style>${REPORT_PDF_STYLES}</style>
+<style>${sporcuRaporPdfExtraStyles}</style>
+  <div class="pdf-page pdf-page--sporcu-detay">
+    <div class="pdf-letterhead">
+      <div class="pdf-letterhead-row">
+        <div class="pdf-brand">
+          <div class="pdf-logo-box">
+            <img src="${logoSrc}" alt="SOYBIS 360°" width="52" height="52" loading="eager" crossorigin="anonymous" />
+          </div>
+          <div>
+            <div class="pdf-org-name">SOYBIS 360°</div>
+            <div class="pdf-org-tagline">Spor Okulları Yönetim Bilgi Sistemi</div>
           </div>
         </div>
-        <div class="pdf-header-right">
-          <div><strong>Rapor No</strong> ${raporNo}</div>
-          <div><strong>Tarih</strong> ${tarih}</div>
-          <div><strong>Saat</strong> ${saat}</div>
-          <div><strong>Sistem</strong> SOY-BIS v3.0</div>
+        <div class="pdf-doc-control">
+          <div><strong>Belge no</strong> ${reportEscapeHtml(docMeta.referenceId)}</div>
+          <div><strong>Oluşturma</strong> ${reportEscapeHtml(docMeta.dateDisplayTr)}</div>
+          <div><strong>Saat</strong> ${reportEscapeHtml(docMeta.timeDisplayTr)}</div>
+          <div><strong>Saat dilimi</strong> ${reportEscapeHtml(docMeta.timezoneLabel)}</div>
+          <div><strong>UTC</strong> ${reportEscapeHtml(docMeta.iso8601Utc)}</div>
         </div>
       </div>
+      <div class="pdf-report-title-block">
+        <div class="pdf-h1">${sporcuAdiGuvenli}</div>
+        <div class="pdf-h1-sub">SOYBIS Resmi Rapor Formatı</div>
+      </div>
     </div>
-
-    <!-- Content -->
     <div class="pdf-content">
       ${siraliKartlar
-        .map((kart, index) => {
+        .map(kart => {
           if (kart.tip === 'grid') {
-            // Grid layout for summary cards (Devam Durumu, Finansal Durum)
             return `
             <div class="pdf-section">
-              <div class="pdf-section-title">${kart.baslik}</div>
+              <div class="pdf-h2">${reportEscapeHtml(kart.baslik)}</div>
               <div class="pdf-stats-grid">
                 ${kart.veriler
                   .map(
                     v => `
                   <div class="pdf-stat-card">
-                    <div class="pdf-stat-label">${v.label}</div>
-                    <div class="pdf-stat-value ${v.tip === 'positive' ? 'positive' : v.tip === 'negative' ? 'negative' : ''}">${v.deger}</div>
+                    <div class="pdf-stat-label">${reportEscapeHtml(v.label)}</div>
+                    <div class="pdf-stat-value ${v.tip === 'positive' ? 'positive' : v.tip === 'negative' ? 'negative' : ''}">${reportEscapeHtml(v.deger)}</div>
                   </div>
                 `
                   )
@@ -6263,15 +6449,14 @@ function raporRender(rapor: SporcuDetayRaporu): void {
               </div>
             </div>
           `;
-          } else {
-            // Table layout for detailed information
-            return `
+          }
+          return `
             <div class="pdf-section">
-              <div class="pdf-section-title">${kart.baslik}</div>
+              <div class="pdf-h2">${reportEscapeHtml(kart.baslik)}</div>
               <table class="pdf-table">
                 <thead>
                   <tr>
-                    <th>Açıklama</th>
+                    <th>Alan</th>
                     <th>Değer</th>
                   </tr>
                 </thead>
@@ -6280,8 +6465,8 @@ function raporRender(rapor: SporcuDetayRaporu): void {
                     .map(
                       v => `
                     <tr>
-                      <td class="pdf-label">${v.label}</td>
-                      <td class="pdf-value ${v.tip === 'positive' ? 'positive' : v.tip === 'negative' ? 'negative' : ''}">${v.deger}</td>
+                      <td class="pdf-td-label">${reportEscapeHtml(v.label)}</td>
+                      <td class="pdf-td-value ${v.tip === 'positive' ? 'positive' : v.tip === 'negative' ? 'negative' : ''}">${reportEscapeHtml(v.deger)}</td>
                     </tr>
                   `
                     )
@@ -6290,95 +6475,65 @@ function raporRender(rapor: SporcuDetayRaporu): void {
               </table>
             </div>
           `;
-          }
         })
         .join('')}
     </div>
-
-    <!-- Footer -->
     <div class="pdf-footer">
       <div class="pdf-footer-left">
-        <div class="pdf-footer-brand">SOY-BIS v3.0</div>
-        <div>Spor Okulları Yönetim Bilgi Sistemi</div>
-        <div style="margin-top: 4px; font-size: 7.5pt; color: #a0aec0;">Bu rapor elektronik ortamda oluşturulmuştur ve yasal geçerliliğe sahiptir.</div>
+        <div class="pdf-footer-title">SOYBIS 360° · Sürüm 3.x</div>
+        <div>Gizlilik: yalnızca yetkili kullanıcılar ve kurum içi kullanım. · ${reportEscapeHtml(docMeta.iso8601Utc)}</div>
       </div>
       <div class="pdf-footer-right">
-        <div class="pdf-page-number">Sayfa 1</div>
-        <div>${tarih}</div>
-        <div style="margin-top: 4px; font-size: 7.5pt; color: #a0aec0;">${saat}</div>
+        <div><strong>Sayfa</strong> 1 / 1</div>
+        <div>${reportEscapeHtml(docMeta.dateDisplayTr)}</div>
       </div>
     </div>
   </div>
-</body>
-</html>
     `;
 
     // Geçici container oluştur
     const tempDiv = document.createElement('div');
-    tempDiv.style.position = 'fixed';
-    tempDiv.style.top = '0';
-    tempDiv.style.left = '0';
-    tempDiv.style.width = '210mm';
+    tempDiv.style.width = pdfExportRootWidthMm(PDF_EXPORT_MARGIN_MM);
     tempDiv.style.background = '#ffffff';
-    tempDiv.style.zIndex = '99999';
     tempDiv.style.overflow = 'visible';
     tempDiv.innerHTML = pdfHTML;
-    document.body.appendChild(tempDiv);
-
-    // Render bekle - Daha uzun süre bekle
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        // Element'in render edildiğinden emin ol
-        const height = tempDiv.scrollHeight || tempDiv.offsetHeight || 1200;
-        const width = tempDiv.scrollWidth || tempDiv.offsetWidth || 794;
-
-        console.log('📄 Sporcu PDF oluşturuluyor...', {
-          width,
-          height,
-          kartSayisi: kartlar.length,
-          innerHTMLLength: tempDiv.innerHTML.length,
+    stylePdfExportCaptureRoot(tempDiv);
+    void (async () => {
+      try {
+        await runPdfExportWithRuntime({
+          tempDiv,
+          logoSrc,
+          marginMm: [...PDF_EXPORT_MARGIN_MM],
+          buildOptions: (width, height) => ({
+            margin: [...PDF_EXPORT_MARGIN_MM],
+            filename: `Athlete_Report_${sporcuAdi.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: {
+              scale: getHtml2PdfCanvasScale(),
+              useCORS: true,
+              letterRendering: true,
+              logging: false,
+              width,
+              height,
+              windowWidth: width,
+              windowHeight: height,
+            },
+            jsPDF: {
+              unit: 'mm',
+              format: 'a4',
+              orientation: 'portrait',
+              compress: true,
+            },
+            pagebreak: { ...PDF_HTML2PDF_PAGE_BREAK },
+          }),
         });
-
-        const opt = {
-          margin: 0,
-          filename: `Athlete_Report_${sporcuAdi.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: {
-            scale: 2,
-            useCORS: true,
-            letterRendering: true,
-            logging: false,
-            width: width,
-            height: height,
-            windowWidth: width,
-            windowHeight: height,
-          },
-          jsPDF: {
-            unit: 'mm',
-            format: 'a4',
-            orientation: 'portrait',
-            compress: true,
-          },
-          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-        };
-
-        (window as any)
-          .html2pdf()
-          .set(opt)
-          .from(tempDiv)
-          .save()
-          .then(() => {
-            document.body.removeChild(tempDiv);
-            Helpers.toast('PDF başarıyla indirildi!', 'success');
-          })
-          .catch((error: Error) => {
-            console.error('PDF oluşturma hatası:', error);
-            document.body.removeChild(tempDiv);
-            Helpers.toast('PDF oluşturulurken hata oluştu!', 'error');
-            window.print();
-          });
-      }, 1000); // Daha uzun bekleme süresi
-    });
+        Helpers.toast('PDF başarıyla indirildi!', 'success');
+      } catch (error: unknown) {
+        console.error('PDF oluşturma hatası:', error);
+        Helpers.toast('PDF oluşturulurken hata oluştu!', 'error');
+        window.print();
+      }
+    })();
   };
 
   if (geriBtn && raporGeriBtnHandler) {
@@ -6626,6 +6781,7 @@ function topluZamGecerliMi(values: TopluZamFormValues): boolean {
 function topluZamSporculariFiltrele(values: TopluZamFormValues): Sporcu[] {
   return Storage.sporculariGetir().filter(s => {
     if (s.odemeBilgileri?.burslu) return false;
+    if (s.durum === 'Ayrıldı' && values.durumFiltre !== 'Ayrıldı') return false;
     if (values.bransFiltre && s.sporBilgileri?.brans !== values.bransFiltre) return false;
     if (values.durumFiltre && s.durum !== values.durumFiltre) return false;
     if (values.yasGrubuFiltre && s.tffGruplari?.anaGrup !== values.yasGrubuFiltre) return false;
@@ -6835,6 +6991,7 @@ function topluZamModalOlustur(): HTMLElement | null {
                 <select id="zamDurumFiltre" class="form-control">
                   <option value="Aktif">Aktif</option>
                   <option value="Pasif">Pasif</option>
+                  <option value="Ayrıldı">Ayrıldı</option>
                   <option value="">Tümü</option>
                 </select>
               </div>
@@ -7059,6 +7216,16 @@ function topluZamModalKapat(): void {
   }
 }
 
+/**
+ * Antrenman grupları (Ayarlar) değişince sporcu formu ve liste filtrelerini yeniler.
+ */
+export function antrenmanGruplariUiYenile(): void {
+  filterCache.cachedResults = null;
+  filterCache.lastSporcularHash = null;
+  antrenmanGrubuSecenekleriniDoldur();
+  listeyiGuncelle();
+}
+
 // ============================================================================
 // BÖLÜM 24: GLOBAL EXPORTS
 // ============================================================================
@@ -7074,8 +7241,10 @@ if (typeof window !== 'undefined') {
     kaydet,
     duzenle,
     sil,
+    tekrarAktifEt,
     durumDegistir,
     formuTemizle,
+    listeFiltreleriniSifirla,
     listeyiGuncelle,
     aktifSporcuSayisi,
     yasGrubunaGore,
@@ -7088,5 +7257,6 @@ if (typeof window !== 'undefined') {
     // Toplu zam fonksiyonları
     topluZamModalAc,
     gelecekAylarBorcKayitlariniGuncelle,
+    antrenmanGruplariUiYenile,
   };
 }

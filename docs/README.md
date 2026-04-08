@@ -84,6 +84,16 @@ SOY-BIS-Modular/
 - Auto-formatting
 - Strict rules
 
+### Ortam değişkenleri (Vite + PHP API)
+
+| Amaç | Nerede | Örnek |
+|------|--------|--------|
+| Frontend’in çağırdığı API kök adresi | `.env.local` (kopya: `.env.example`) | `VITE_SOYBIS_API_BASE=http://localhost/soybis/api` veya üretimde `/api` |
+| Vite dev: `/api` isteklerinin yönlendirileceği Apache kökü (sonda `/api` yok) | `.env.local` | `VITE_SOYBIS_API_PROXY_TARGET=http://localhost/soybis` |
+| PHP API’de hata ayıklama (JSON 500 yanıtına `detail` ekler) | Apache/nginx **ortam değişkeni** (Vite `.env` otomatik yüklemez) | `SOYBIS_API_DEBUG=1` |
+
+**Yedek / geri yükleme:** Uygulama içi yedek indirme ve dosyadan geri yükleme; paylaşımlı modda sunucuya da `backup/restore` isteği gider. API kapalıyken veriler yerelde güncellenir; senkron uyarısı gösterilebilir.
+
 ## 📝 Migration Notları
 
 Bu versiyon, vanilla JavaScript'ten TypeScript + Vite mimarisine geçiş yapıyor.
@@ -95,6 +105,16 @@ Bu versiyon, vanilla JavaScript'ten TypeScript + Vite mimarisine geçiş yapıyo
 - [ ] Module system'e geçiş (ES Modules)
 - [ ] Type definitions oluşturma
 - [ ] Component-based architecture'a geçiş
+
+## 📄 PDF Export Stabilite Notu
+
+- PDF render akışı `createPdfExportRuntime()` üzerinden izole host (`iframe`) içinde çalışır.
+- Geçici PDF DOM'u ana UI'ya eklenmez; bu sayede indirme sırasında katman/z-index çakışmaları azalır.
+- Temizleme sırası her zaman: `worker.save()` sonrası `cleanup(root)`.
+- Smoke test önerisi:
+  - Masaüstü: `Raporlar > PDF İndir`
+  - Mobil: `Raporlar > PDF İndir`
+  - Sporcu: `Sporcu Detay > PDF İndir`
 
 ## 🎯 Hedefler
 

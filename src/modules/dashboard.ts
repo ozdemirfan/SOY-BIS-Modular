@@ -7,6 +7,7 @@ import Chart from 'chart.js/auto';
 import type { Chart as ChartType } from 'chart.js';
 import * as Storage from '../utils/storage';
 import * as Helpers from '../utils/helpers';
+import { aidatGuncelDonemKpiOzet } from './aidat';
 import { Sporcu } from '../types';
 import type { Session } from '../types';
 
@@ -31,6 +32,7 @@ declare global {
       kaydet?: () => void;
       duzenle?: (id: number) => void;
       sil?: (id: number) => void;
+      tekrarAktifEt?: (id: number) => void;
       durumDegistir?: (id: number) => void;
       formuTemizle?: () => void;
       listeyiGuncelle?: () => void;
@@ -39,6 +41,7 @@ declare global {
       sporcuMalzemeEkleModalKapat?: () => void;
       sporcuMalzemeKaydet?: () => void;
       raporGoster?: (sporcuId: number) => void;
+      antrenmanGruplariUiYenile?: () => void;
     };
     Ayarlar?: {
       baslangicBakiyesiGetir?: () => { nakit: number; banka: number; tarih: string } | null;
@@ -208,63 +211,16 @@ function tarihParcala(tarihStr: string | null | undefined): TarihParcala {
  * Basit ve anlaşılır: Tahsilat, Gider, Kasa
  */
 function finansalIstatistikler(): void {
-  const sporcular = Storage.sporculariGetir();
   const aidatlar = Storage.aidatlariGetir();
   const giderler = Storage.giderleriGetir();
 
-  const { ay: buAy, yil: buYil } = Helpers.suAnkiDonem();
+  // Güncel ay — Aidat ile aynı motor (aidatDonemKpiOzet); takvimde başka ay seçiliyken Aidat farklı dönem gösterebilir
+  const kpi = aidatGuncelDonemKpiOzet();
+  const beklenenAidat = kpi.beklenen;
+  const tahsilat = kpi.tahsilat;
+  const kalanAlacak = kpi.kalan;
+  const kalanAlacakToplami = kpi.kalan;
 
-  // Beklenen Aidat (Bu ay için) = Bu ay için oluşturulmuş tüm borç kayıtları (Aidat + Malzeme)
-  // ÖNEMLİ: Beklenen aidat, aktif sporcuların aylık ücretleri değil, bu ay için oluşturulmuş borç kayıtlarının toplamıdır
-  // Çünkü henüz otomatik borç yansımamış sporcular veya bu ay kayıt olmayan sporcular beklenen aidata dahil edilmemeli
-
-  // Bu ay için oluşturulmuş borç kayıtları = Beklenen Aidat
-  const beklenenAidat = aidatlar
-    .filter(a => {
-      // Bu ay için borç kayıtları
-      if (a.donemAy && a.donemYil) {
-        return a.donemAy === buAy && a.donemYil === buYil;
-      }
-      if (a.tarih) {
-        const { ay, yil } = tarihParcala(a.tarih);
-        return ay === buAy && yil === buYil;
-      }
-      return false;
-    })
-    .filter(
-      a =>
-        (a.tutar || 0) > 0 &&
-        (a.islem_turu === 'Aidat' || a.islem_turu === 'Malzeme' || !a.islem_turu)
-    )
-    .reduce((t, a) => t + (a.tutar || 0), 0);
-
-  // Bu Ay Borçlar = Beklenen Aidat (Aynı şeyi hesaplıyor)
-  // NOT: buAyBorclar ve beklenenAidat aynı filtreleme mantığı ile hesaplanıyor
-  // İkisi de bu ay için oluşturulmuş pozitif tutarlı borç kayıtlarının toplamı
-  // Ancak buAyBorclar sadece 'Aidat' ve 'Malzeme' için, beklenenAidat ise !islem_turu dahil
-  // Bu yüzden beklenenAidat'ı buAyBorclar ile aynı yapıyoruz (tutarlılık için)
-  const buAyBorclar = beklenenAidat;
-
-  // Bu Ay Tahsilat - YENİ MANTIK: Sadece negatif tutarları topla (tahsilatlar)
-  const tahsilat = aidatlar
-    .filter(a => {
-      if (a.donemAy && a.donemYil) {
-        return a.donemAy === buAy && a.donemYil === buYil;
-      }
-      if (a.tarih) {
-        const { ay, yil } = tarihParcala(a.tarih);
-        return ay === buAy && yil === buYil;
-      }
-      return false;
-    })
-    .filter(a => (a.tutar || 0) < 0 || a.islem_turu === 'Tahsilat') // Sadece tahsilatları al
-    .reduce((t, a) => t + Math.abs(a.tutar || 0), 0); // Mutlak değer al (pozitif yap)
-
-  // Kalan Alacak = Bu Ay Borçlar - Bu Ay Tahsilat
-  const kalanAlacak = Math.max(0, buAyBorclar - tahsilat);
-
-  // Tahsilat Oranı - Beklenen aidat (bu ay için oluşturulmuş borçlar) üzerinden hesaplanır
-  // beklenenAidat ve buAyBorclar aynı olduğu için beklenenAidat kullanıyoruz
   const tahsilatOrani =
     beklenenAidat > 0
       ? Math.min(100, Math.round((tahsilat / beklenenAidat) * 100))
@@ -274,49 +230,6 @@ function finansalIstatistikler(): void {
 
   // Toplam Gider (Tüm zamanlar)
   const gider = giderler.reduce((t, g) => t + (g.miktar || 0), 0);
-
-  // Toplam Tahsilat (Tüm zamanlar) - YENİ MANTIK: Sadece negatif tutarları topla (tahsilatlar)
-  const toplamTahsilat = aidatlar
-    .filter(a => (a.tutar || 0) < 0 || a.islem_turu === 'Tahsilat') // Sadece tahsilatları al
-    .reduce((t, a) => t + Math.abs(a.tutar || 0), 0); // Mutlak değer al (pozitif yap)
-
-  // ========== KALAN ALACAK TOPLAMI HESAPLAMASI ==========
-  // Tüm aktif sporcular için beklenen toplam aidat (tüm zamanlar)
-  // Sporcu kayıt tarihinden bugüne kadar geçen ayları hesapla
-  const bugun = new Date();
-  const toplamBeklenenAidat = sporcular
-    .filter(s => s.durum === 'Aktif' && !s.odemeBilgileri?.burslu)
-    .reduce((t, s) => {
-      // Her sporcu için aylık ücreti al
-      const aylikUcret = s.odemeBilgileri?.aylikUcret || 0;
-
-      // Sporcu kayıt tarihine göre kaç ay geçmiş hesapla
-      let toplamAy = 0;
-      if (s.kayitTarihi) {
-        const kayitTarihi = new Date(s.kayitTarihi);
-        // Kayıt tarihinden bugüne kadar geçen ay sayısı
-        const ayFarki =
-          (bugun.getFullYear() - kayitTarihi.getFullYear()) * 12 +
-          (bugun.getMonth() - kayitTarihi.getMonth());
-        // En az 1 ay, eğer bu ay içindeyse de 1 ay say
-        toplamAy = Math.max(1, ayFarki + 1);
-      } else {
-        // Kayıt tarihi yoksa, varsayılan olarak 1 ay (sadece bu ay)
-        toplamAy = 1;
-      }
-
-      return t + aylikUcret * toplamAy;
-    }, 0);
-
-  // Toplam Borç (Tüm zamanlar) - YENİ MANTIK: Sadece pozitif tutarları topla (borçlar)
-  // KRİTİK: Gelecek aylar için oluşturulan borç kayıtları (zam sonrası) mevcut borç hesaplamalarına dahil edilmemeli
-  const toplamBorc = aidatlar
-    .filter(a => Helpers.gelecekAylarFiltresi(a, buAy, buYil))
-    .filter(a => (a.tutar || 0) > 0 && (a.islem_turu === 'Aidat' || a.islem_turu === 'Malzeme'))
-    .reduce((t, a) => t + (a.tutar || 0), 0);
-
-  // Kalan Alacak Toplamı = Toplam Borç - Toplam Tahsilat
-  const kalanAlacakToplami = Math.max(0, toplamBorc - toplamTahsilat);
 
   // ========== NAKİT VE BANKA HESAPLAMALARI ==========
 
@@ -1353,7 +1266,7 @@ function malzemeEventleri(): void {
       const target = e.target as HTMLElement;
       const btn = target.closest('#malzemeEkleBtn') as HTMLElement | null;
 
-      if (btn && (dashboardView as HTMLElement).style.display !== 'none') {
+      if (btn && dashboardView.classList.contains('active')) {
         e.preventDefault();
         e.stopPropagation();
         malzemeModalAc();

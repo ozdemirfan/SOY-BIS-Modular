@@ -2,8 +2,30 @@
 <html lang="tr">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SOY-BIS | Spor Okulları Yönetim Bilgi Sistemi</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>SOYBIS 360° | Spor Okulları Yönetim Bilgi Sistemi</title>
+    <!-- Stilleri JS’ten önce yükle: ilk boyamada .modal/.view/mobil sidebar kuralları uygulanır (ham HTML metinleri görünmez) -->
+    <link rel="stylesheet" href="/src/styles/main.css" />
+    <!-- Ağ yavaşken CSS gelene kadar logo taşmasını sınırla; tam düzen linkteki bundle ile gelir -->
+    <style>
+        /* Ağ / Vite gecikmesinde tek renk; kayitli tema light ise body’ye hemen light-mode (aşağıdaki script) */
+        body {
+            margin: 0;
+            background: #0a0e27;
+            color: #fff;
+        }
+        body.light-mode {
+            background: #e8e3da;
+            color: #111b21;
+        }
+        img[class*="logo"] {
+            max-width: min(100vw, 520px);
+            max-height: 220px;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+        }
+    </style>
     
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="/logo.png">
@@ -14,12 +36,21 @@
     <!-- Vite will handle module bundling -->
 </head>
 <body>
+    <script>
+        (function () {
+            try {
+                var stored = localStorage.getItem('soybis_theme');
+                var theme = stored || 'dark';
+                if (theme === 'light') document.body.classList.add('light-mode');
+            } catch (e) {}
+        })();
+    </script>
     <!-- Login Overlay -->
-    <div id="loginOverlay" class="login-overlay hidden" style="display: none !important;">
+    <div id="loginOverlay" class="login-overlay hidden">
         <div class="login-container">
             <div class="login-header">
                 <img src="/logo.png" alt="Logo" class="login-logo">
-                <h1>SOY-BIS</h1>
+                <h1>SOYBIS 360°</h1>
                 <p class="login-subtitle">Spor Okulları Yönetim Bilgi Sistemi</p>
             </div>
             <form id="loginForm" class="login-form">
@@ -35,7 +66,7 @@
                     </label>
                     <input type="password" id="loginSifre" required autocomplete="current-password" placeholder="Şifrenizi girin">
                 </div>
-                <div id="loginError" class="login-error" style="display: none;">
+                <div id="loginError" class="login-error">
                     <i class="fa-solid fa-exclamation-circle"></i>
                     <span id="loginErrorText"></span>
                 </div>
@@ -47,11 +78,11 @@
     </div>
 
     <!-- Splash Screen -->
-    <div id="splashScreen" class="splash-screen hidden" style="display: none !important;">
+    <div id="splashScreen" class="splash-screen hidden">
         <div class="splash-content">
             <img src="/logo.png" alt="Logo" class="splash-logo">
             <div class="splash-text">
-                <h1>SOY-BIS</h1>
+                <h1>SOYBIS 360°</h1>
                 <p>Spor Okulları Yönetim Bilgi Sistemi</p>
             </div>
             <div class="splash-loader">
@@ -60,7 +91,7 @@
         </div>
     </div>
 
-    <div class="app-container" style="display: none;">
+    <div class="app-container app-container--prelogin">
         <!-- Mobile Floating Menu Button (Bottom Right) -->
         <button class="mobile-fab-menu" id="hamburgerBtn" aria-label="Menü" aria-expanded="false" title="">
             <span class="hamburger-line"></span>
@@ -75,8 +106,8 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <img src="/logo.png" alt="Logo" class="sidebar-logo">
-                <h2>SOY-BIS</h2>
-                <span class="sidebar-tagline">Sports Management</span>
+                <h2>SOYBIS 360°</h2>
+                <span class="sidebar-tagline">SPOR OKULLARI</span>
                 <!-- Close Button (Mobile Only) -->
                 <button class="sidebar-close-btn" id="sidebarCloseBtn" aria-label="Menüyü kapat">
                     <i class="fa-solid fa-times"></i>
@@ -124,30 +155,30 @@
         <!-- Main Content Area -->
         <main class="main-content">
             <!-- Header -->
-            <header class="app-header">
+            <header class="app-header" role="banner">
             <!-- Desktop Floating Hamburger Button (Sidebar kapalıyken görünür - Sadece masaüstünde) -->
             <button class="desktop-hamburger-menu-btn" id="desktopMenuToggle" aria-label="Menüyü aç" title="Menüyü aç">
                 <i class="fa-solid fa-bars"></i>
             </button>
-                <div class="brand">
-                    <img src="/logo.png" alt="Logo" class="header-logo" onerror="this.style.display='none';" style="display: none;">
+                <div class="brand app-header-brand">
+                    <img src="/logo.png" alt="" class="header-logo header-logo--hidden" width="32" height="32" decoding="async" onerror="this.classList.add('header-logo--hidden');">
                     <div class="brand-text">
-                        <h1>SOY-BIS</h1>
-                        <p>Spor Okulları Yönetim Bilgi Sistemi</p>
+                        <h1>SOYBIS 360°</h1>
+                        <p class="app-header-tagline">Spor Okulları Yönetim Bilgi Sistemi</p>
                     </div>
                 </div>
-                <div class="meta">
+                <div class="meta app-header-meta">
                     <!-- Tema Değiştirme Butonu -->
                     <button class="theme-toggle-btn" id="themeToggle" aria-label="Tema değiştir" title="Tema değiştir">
                         <i class="fa-solid fa-moon" id="themeIcon"></i>
                     </button>
                     <span id="nowDate" class="header-date"></span>
                     <span class="header-divider"></span>
-                    <div class="header-user-info" id="headerUser" style="display: none;">
+                    <div class="header-user-info" id="headerUser">
                         <span class="user-name" id="userName">Sistem Yöneticisi</span>
                         <span class="user-role-badge" id="userRoleBadge">Yönetici</span>
                     </div>
-                    <button class="btn btn-logout" id="logoutBtn" title="Çıkış Yap" style="display: none;">
+                    <button class="btn btn-logout" id="logoutBtn" title="Çıkış Yap">
                         <i class="fa-solid fa-right-from-bracket"></i>
                         <span>Çıkış</span>
                     </button>
@@ -158,22 +189,26 @@
             <section class="content-area">
                 <!-- Dashboard View -->
                 <div id="dashboard" class="view active">
-                    <div class="card card-primary">
-                        <div class="card-header">
-                            <h1><i class="fa-solid fa-chart-pie" style="color: #f59e0b;"></i> Gösterge Paneli</h1>
+                    <div class="card card-primary dashboard-primary-layout">
+                        <!-- DOM: önce hızlı erişim; masaüstünde üstte, mobilde sıra CSS order ile düzeltilir -->
+                        <div class="dashboard-quick-access-panel">
+                            <div class="card dashboard-quick-card">
+                                <div class="card-header dashboard-quick-access-heading">
+                                    <h2 class="card-header-accent-title"><i class="fa-solid fa-bolt"></i> Hızlı Erişim</h2>
+                                </div>
+                                <div class="quick-actions" id="quickActions">
+                                    <!-- Dinamik olarak doldurulacak -->
+                                </div>
+                            </div>
                         </div>
-                        <p class="welcome-text">
-                            Hoş geldiniz! Spor kulübü yönetim sisteminde güncel durumu buradan takip edebilirsiniz.
-                        </p>
-                        
-                        <!-- Hızlı Erişim -->
-                        <div class="card">
+
+                        <div class="dashboard-title-block">
                             <div class="card-header">
-                                <h1><i class="fa-solid fa-bolt"></i> Hızlı Erişim</h1>
+                                <h1><i class="fa-solid fa-chart-pie"></i> Gösterge Paneli</h1>
                             </div>
-                            <div class="quick-actions" id="quickActions">
-                                <!-- Dinamik olarak doldurulacak -->
-                            </div>
+                            <p class="welcome-text">
+                                Hoş geldiniz! Spor okulları yönetim sisteminde güncel durumu buradan takip edebilirsiniz.
+                            </p>
                         </div>
                         
                         <!-- 1. Satır: FİNANSAL DURUM (Tam Genişlik) -->
@@ -235,7 +270,7 @@
                                         Kalan: <span id="kalanAlacak">0 TL</span>
                                     </div>
                                     <div class="progress-bar">
-                                        <div class="progress-fill" id="tahsilatProgress" style="width: 0%"></div>
+                                        <div class="progress-fill" id="tahsilatProgress"></div>
                                     </div>
                                 </div>
                             </div>
@@ -261,9 +296,9 @@
                     </div>
                     
                     <!-- Belge Uyarıları -->
-                    <div class="card" id="belgeUyariCard" style="display: none;">
+                    <div class="card" id="belgeUyariCard">
                         <div class="card-header">
-                            <h1><i class="fa-solid fa-triangle-exclamation"></i> Belge Uyarıları</h1>
+                            <h2 class="card-header-accent-title"><i class="fa-solid fa-triangle-exclamation"></i> Belge Uyarıları</h2>
                         </div>
                         <div class="belge-uyari-container" id="belgeUyariList">
                             <!-- Dinamik doldurulacak -->
@@ -271,10 +306,10 @@
                     </div>
                     
                     <!-- Hatırlatılacaklar -->
-                    <div class="card" id="hatirlatilacaklarCard" style="display: none;">
-                        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-                            <h1><i class="fa-solid fa-bell"></i> Hatırlatılacaklar</h1>
-                            <button class="btn btn-small" id="topluHatirlatmaBtn" onclick="Notification.topluHatirlatmaGonder(hatirlatilacaklarListesi, 'inApp')" style="display: none;">
+                    <div class="card" id="hatirlatilacaklarCard">
+                        <div class="card-header card-header--row-actions">
+                            <h2 class="card-header-accent-title"><i class="fa-solid fa-bell"></i> Hatırlatılacaklar</h2>
+                            <button class="btn btn-small" id="topluHatirlatmaBtn" onclick="Notification.topluHatirlatmaGonder(hatirlatilacaklarListesi, 'inApp')">
                                 <i class="fa-solid fa-paper-plane"></i> Toplu Hatırlatma
                             </button>
                         </div>
@@ -393,7 +428,7 @@
                                         </div>
                                         <div class="form-group">
                                             <label for="tcKimlik"><i class="fa-solid fa-credit-card"></i> TC Kimlik No</label>
-                                            <input type="text" id="tcKimlik" maxlength="11" pattern="[0-9]{11}" placeholder="11 haneli TC kimlik (opsiyonel)">
+                                            <input type="text" id="tcKimlik" maxlength="11" pattern="[0-9]{11}" placeholder="Geçici toplu kayıt: 11111111111 veya gerçek TC">
                                             <small class="error-text" id="tcKimlikError"></small>
                                         </div>
                                     </div>
@@ -426,8 +461,11 @@
                                             <input type="number" id="formaNo" min="1" max="99" placeholder="1-99">
                                         </div>
                                         <div class="form-group">
-                                            <label for="kucukYasGrubu"><i class="fa-solid fa-layer-group"></i> Küçük Grup</label>
-                                            <input type="text" id="kucukYasGrubu" placeholder="Örn: A Grubu">
+                                            <label for="antrenmanGrubuSelect"><i class="fa-solid fa-people-group"></i> Antrenman grubuna ata</label>
+                                            <select id="antrenmanGrubuSelect">
+                                                <option value="">— Grup seçilmedi —</option>
+                                            </select>
+                                            <small class="form-hint">Merkezi gruplar burada listelenir; branş seçerseniz liste yalnızca o branşa göre daralır. Yeni grup ve toplu atama: <strong>Ayarlar</strong> → Antrenman grupları / Antrenman grubu atamaları.</small>
                                         </div>
                                     </div>
                                 </div>
@@ -877,7 +915,7 @@
                                 
                                 <!-- Wizard Navigation Buttons -->
                                 <div class="wizard-actions">
-                                    <button type="button" class="btn" id="wizardGeriBtn" style="display: none;">
+                                    <button type="button" class="btn" id="wizardGeriBtn">
                                         <i class="fa-solid fa-arrow-left"></i> Geri
                                     </button>
                                     <div class="wizard-actions-spacer"></div>
@@ -887,7 +925,7 @@
                                     <button type="button" class="btn btn-primary" id="wizardIleriBtn">
                                         İleri <i class="fa-solid fa-arrow-right"></i>
                                     </button>
-                                    <button type="submit" class="btn btn-success" id="kaydetBtn" style="display: none;">
+                                    <button type="submit" class="btn btn-success" id="kaydetBtn">
                                         <i class="fa-solid fa-check"></i> Sporcuyu Kaydet
                                     </button>
                                 </div>
@@ -906,8 +944,8 @@
                         <!-- Özet Kartlar -->
                         <div class="sporcu-summary-cards">
                             <div class="summary-card">
-                                <div class="summary-card-icon" style="background: rgba(34, 197, 94, 0.1);">
-                                    <i class="fa-solid fa-users" style="color: #22c55e;"></i>
+                                <div class="summary-card-icon summary-card-icon--toplam">
+                                    <i class="fa-solid fa-users"></i>
                                 </div>
                                 <div class="summary-card-content">
                                     <div class="summary-card-label">Toplam Sporcu</div>
@@ -915,8 +953,8 @@
                                 </div>
                             </div>
                             <div class="summary-card">
-                                <div class="summary-card-icon" style="background: rgba(59, 130, 246, 0.1);">
-                                    <i class="fa-solid fa-user-check" style="color: #3b82f6;"></i>
+                                <div class="summary-card-icon summary-card-icon--aktif">
+                                    <i class="fa-solid fa-user-check"></i>
                                 </div>
                                 <div class="summary-card-content">
                                     <div class="summary-card-label">Aktif</div>
@@ -924,8 +962,8 @@
                                 </div>
                             </div>
                             <div class="summary-card">
-                                <div class="summary-card-icon" style="background: rgba(239, 68, 68, 0.1);">
-                                    <i class="fa-solid fa-user-pause" style="color: #ef4444;"></i>
+                                <div class="summary-card-icon summary-card-icon--pasif">
+                                    <i class="fa-solid fa-user-pause"></i>
                                 </div>
                                 <div class="summary-card-content">
                                     <div class="summary-card-label">Pasif</div>
@@ -933,8 +971,8 @@
                                 </div>
                             </div>
                             <div class="summary-card">
-                                <div class="summary-card-icon" style="background: rgba(168, 85, 247, 0.1);">
-                                    <i class="fa-solid fa-futbol" style="color: #a855f7;"></i>
+                                <div class="summary-card-icon summary-card-icon--brans">
+                                    <i class="fa-solid fa-futbol"></i>
                                 </div>
                                 <div class="summary-card-content">
                                     <div class="summary-card-label">Branş Sayısı</div>
@@ -957,6 +995,11 @@
                                         <option value="">Tüm Durumlar</option>
                                         <option value="Aktif">Aktif</option>
                                         <option value="Pasif">Pasif</option>
+                                        <option value="Ayrıldı">Ayrıldı</option>
+                                    </select>
+                                    <select id="antrenmanGrubuFiltre" title="Antrenman grubu">
+                                        <option value="">Tüm Gruplar</option>
+                                        <option value="__none__">Grubu yok</option>
                                     </select>
                                 </div>
                             </div>
@@ -976,7 +1019,37 @@
                 <!-- Aidat Takip View -->
                 <div id="aidat" class="view">
                     <!-- Liste Görünümü (EN ÜST) -->
-                    <div id="aidatListCard" class="aidat-panel">
+                    <div id="aidatListCard" class="aidat-panel" data-aidat-view="card">
+                        <!-- Özet KPI: başlıktan ayrı şerit -->
+                        <section class="aidat-kpi-strip" aria-label="Aidat özeti">
+                            <div class="aidat-summary-grid">
+                                <div class="aidat-summary-item">
+                                    <div class="aidat-summary-label">Alacakların Toplamı</div>
+                                    <div id="toplamBeklenen" class="aidat-summary-value">0 TL</div>
+                                </div>
+                                <div class="aidat-summary-item">
+                                    <div class="aidat-summary-label">Tahsilat</div>
+                                    <div id="toplamTahsilat" class="aidat-summary-value aidat-value-success">0 TL</div>
+                                </div>
+                                <div class="aidat-summary-item">
+                                    <div class="aidat-summary-label">Kalan</div>
+                                    <div id="kalanBorc" class="aidat-summary-value aidat-value-danger">0 TL</div>
+                                </div>
+                                <div class="aidat-summary-item">
+                                    <div class="aidat-summary-label">Tahsilat Oranı</div>
+                                    <div id="tahsilatYuzde" class="aidat-summary-value">%0</div>
+                                </div>
+                            </div>
+                            <div class="aidat-kpi-strip-actions">
+                                <div class="aidat-kpi-strip-actions__inner">
+                                    <p class="aidat-kpi-strip-actions__hint">
+                                        Aylık ücretlerde toplu güncelleme (sabit tutar, yüzde veya enflasyon).
+                                    </p>
+                                    <div id="topluZamAidatSlot" class="aidat-toplu-zam-slot" aria-live="polite"></div>
+                                </div>
+                            </div>
+                        </section>
+
                         <!-- Header Section -->
                         <div class="aidat-header">
                             <div class="aidat-header-top">
@@ -984,19 +1057,21 @@
                                     <i class="fa-solid fa-wallet"></i>
                                     Aidat Takip
                                 </h1>
+                                <div class="aidat-header-top-actions">
                                 <div class="aidat-view-toggle">
-                                    <button type="button" class="view-toggle-btn active" data-view="table" title="Tablo Görünümü">
+                                    <button type="button" class="view-toggle-btn" data-view="table" title="Tablo Görünümü">
                                         <i class="fa-solid fa-table"></i>
                                     </button>
-                                    <button type="button" class="view-toggle-btn" data-view="card" title="Kart Görünümü">
+                                    <button type="button" class="view-toggle-btn active" data-view="card" title="Kart Görünümü">
                                         <i class="fa-solid fa-grid"></i>
                                     </button>
+                                </div>
                                 </div>
                             </div>
                             <div class="aidat-header-actions">
                                 <!-- Modern Tab Bar - Sol Taraf: Filtreler -->
                                 <div class="aidat-quick-filters">
-                                    <button type="button" class="aidat-filter-btn active" id="aidatFilterAll" onclick="Aidat.hizliFiltrele('all')">
+                                    <button type="button" class="aidat-filter-btn" id="aidatFilterAll" onclick="Aidat.hizliFiltrele('all')">
                                         Tümü
                                     </button>
                                     <button type="button" class="aidat-filter-btn aidat-filter-paid" id="aidatFilterPaid" onclick="Aidat.hizliFiltrele('paid')">
@@ -1005,7 +1080,7 @@
                                     <button type="button" class="aidat-filter-btn aidat-filter-upcoming" id="aidatFilterUpcoming" onclick="Aidat.hizliFiltrele('upcoming')">
                                         Yaklaşanlar
                                     </button>
-                                    <button type="button" class="aidat-filter-btn aidat-filter-debt" id="aidatFilterDebt" onclick="Aidat.hizliFiltrele('debt')">
+                                    <button type="button" class="aidat-filter-btn aidat-filter-debt active" id="aidatFilterDebt" onclick="Aidat.hizliFiltrele('debt')">
                                         Ödemeyenler
                                     </button>
                                 </div>
@@ -1019,7 +1094,7 @@
                                     </button>
                                 </div>
                                 <!-- Gelişmiş Filtreler (Gizli) -->
-                                <div class="aidat-advanced-filters" id="aidatAdvancedFilters" style="display: none;">
+                                <div class="aidat-advanced-filters" id="aidatAdvancedFilters">
                                     <select id="aidatFilterBrans" class="aidat-filter-select" title="Branş Filtrele">
                                         <option value="">Tüm Branşlar</option>
                                     </select>
@@ -1037,62 +1112,41 @@
                             </div>
                         </div>
 
-                        <!-- Summary Cards -->
-                        <div class="aidat-summary-grid">
-                            <div class="aidat-summary-item">
-                                <div class="aidat-summary-label">Alacakların Toplamı</div>
-                                <div id="toplamBeklenen" class="aidat-summary-value">0 TL</div>
-                            </div>
-                            <div class="aidat-summary-item">
-                                <div class="aidat-summary-label">Tahsilat</div>
-                                <div id="toplamTahsilat" class="aidat-summary-value aidat-value-success">0 TL</div>
-                            </div>
-                            <div class="aidat-summary-item">
-                                <div class="aidat-summary-label">Kalan</div>
-                                <div id="kalanBorc" class="aidat-summary-value aidat-value-danger">0 TL</div>
-                            </div>
-                            <div class="aidat-summary-item">
-                                <div class="aidat-summary-label">Tahsilat Oranı</div>
-                                <div id="tahsilatYuzde" class="aidat-summary-value">%0</div>
-                            </div>
-                        </div>
-
                         <!-- Search & Content Container -->
                         <div class="aidat-content">
                             <!-- Table Toolbar (Search + Actions) -->
                             <div class="aidat-table-toolbar">
-                            <div class="aidat-search-wrapper">
-                                <i class="fa-solid fa-search"></i>
+                                <div class="aidat-search-wrapper">
+                                    <i class="fa-solid fa-search"></i>
                                     <input type="text" class="aidat-search" id="aidatArama" placeholder="Sporcu ara...">
-                                <button type="button" class="aidat-search-clear" id="aidatSearchClear" style="display: none;" title="Aramayı Temizle">
-                                    <i class="fa-solid fa-times"></i>
-                                </button>
+                                    <button type="button" class="aidat-search-clear" id="aidatSearchClear" title="Aramayı Temizle">
+                                        <i class="fa-solid fa-times"></i>
+                                    </button>
+                                </div>
                             </div>
-                            </div>
+                            <p class="aidat-avatar-hint" id="aidatAvatarHint" role="note" hidden aria-hidden="true">
+                                <i class="fa-solid fa-hand-pointer" aria-hidden="true"></i>
+                                <span>Ödeme özeti için satırdaki <strong>baş harf</strong> düğmesine tıklayın.</span>
+                            </p>
                             
                             <!-- Table View -->
                             <div class="aidat-table-wrapper" id="aidatTableView">
-                                <table class="aidat-table aidat-table-high-density">
-                                    <thead>
-                                        <tr>
-                                            <th class="checkbox-col">
-                                                <input type="checkbox" id="aidatTableSelectAll" title="Tümünü Seç">
-                                            </th>
-                                            <th>Sporcu</th>
-                                            <th>Aylık Ücret</th>
-                                            <th>Son Ödeme</th>
-                                            <th>Durum</th>
-                                            <th>Kalan Borç</th>
-                                            <th class="actions-col">İşlemler</th>
-                                        </tr>
-                                    </thead>
+                                <table class="aidat-table aidat-table-high-density aidat-table-compact">
+                                    <colgroup>
+                                        <col class="aidat-col-sporcu" />
+                                        <col class="aidat-col-num" />
+                                        <col class="aidat-col-date" />
+                                        <col class="aidat-col-status" />
+                                        <col class="aidat-col-borc" />
+                                        <col class="aidat-col-actions" />
+                                    </colgroup>
                                     <tbody id="aidatTableBody">
                                     </tbody>
                                 </table>
                             </div>
                             
                             <!-- Card View -->
-                            <div class="aidat-card-wrapper" id="aidatCardView" style="display: none;">
+                            <div class="aidat-card-wrapper" id="aidatCardView">
                                 <div class="aidat-cards-grid" id="aidatCardsGrid">
                                     <!-- Kartlar buraya JavaScript ile eklenecek -->
                                 </div>
@@ -1107,21 +1161,21 @@
                     </div>
 
                     <!-- Takvim Görünümü (ALTA) -->
-                    <div class="card" id="aidatCalendarCard" style="margin-top: 0.75rem;">
-                        <div class="card-header" style="padding: 0.5rem 0.75rem;">
-                            <h1 style="font-size: 0.875rem; margin: 0; font-weight: 600;"><i class="fa-solid fa-calendar-days"></i> Ödeme Takvimi</h1>
-                            <div style="display: flex; gap: 0.25rem; align-items: center; flex-wrap: wrap;">
-                                <button class="btn btn-small" id="calendarPrevMonth" title="Önceki Ay" style="padding: 0.25rem 0.375rem; font-size: 0.6875rem; min-width: auto;">
+                        <div class="card aidat-calendar-card" id="aidatCalendarCard">
+                        <div class="card-header aidat-calendar-card-header">
+                            <h2 class="card-header-accent-title aidat-calendar-title"><i class="fa-solid fa-calendar-days"></i> Ödeme Takvimi</h2>
+                            <div class="aidat-calendar-controls">
+                                <button class="btn btn-small aidat-calendar-control-btn" id="calendarPrevMonth" title="Önceki Ay">
                                     <i class="fa-solid fa-chevron-left"></i>
                                 </button>
-                                <select id="calendarMonth" style="padding: 0.25rem 0.375rem; font-size: 0.6875rem; border-radius: var(--radius); background: var(--input-bg); color: var(--dark); border: 1px solid var(--border);">
+                                <select id="calendarMonth" class="aidat-calendar-control-select">
                                 </select>
-                                <select id="calendarYear" style="padding: 0.25rem 0.375rem; font-size: 0.6875rem; border-radius: var(--radius); background: var(--input-bg); color: var(--dark); border: 1px solid var(--border);">
+                                <select id="calendarYear" class="aidat-calendar-control-select">
                                 </select>
-                                <button class="btn btn-small" id="calendarNextMonth" title="Sonraki Ay" style="padding: 0.25rem 0.375rem; font-size: 0.6875rem; min-width: auto;">
+                                <button class="btn btn-small aidat-calendar-control-btn" id="calendarNextMonth" title="Sonraki Ay">
                                     <i class="fa-solid fa-chevron-right"></i>
                                 </button>
-                                <button class="btn btn-small" id="calendarToday" title="Bugüne Git" style="padding: 0.25rem 0.375rem; font-size: 0.6875rem; min-width: auto;">
+                                <button class="btn btn-small aidat-calendar-control-btn" id="calendarToday" title="Bugüne Git">
                                     <i class="fa-solid fa-calendar-day"></i> Bugün
                                 </button>
                             </div>
@@ -1154,16 +1208,29 @@
                 <!-- Yoklama View -->
                 <div id="yoklama" class="view">
                     <div class="card">
-                        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                        <div class="card-header yoklama-card-header">
                             <h1><i class="fa-solid fa-clipboard-check"></i> Yoklama</h1>
                         </div>
                         
                         <div class="yoklama-header">
                             <div class="yoklama-filters">
                                 <div class="filter-item">
-                                    <label for="yoklamaGrup">Grup:</label>
-                                    <select id="yoklamaGrup">
-                                        <option value="all">Tüm Gruplar</option>
+                                    <label for="yoklamaBrans">Branş:</label>
+                                    <select id="yoklamaBrans" aria-label="Branş filtresi">
+                                        <option value="all">Tüm branşlar</option>
+                                    </select>
+                                </div>
+                                <div class="filter-item">
+                                    <label for="yoklamaTffYas">TFF yaş:</label>
+                                    <select id="yoklamaTffYas" aria-label="TFF yaş grubu filtresi">
+                                        <option value="all">Tüm TFF yaş grupları</option>
+                                    </select>
+                                </div>
+                                <div class="filter-item">
+                                    <label for="yoklamaAntrenmanGrubu">Antrenman grubu:</label>
+                                    <select id="yoklamaAntrenmanGrubu" aria-label="Antrenman grubu filtresi">
+                                        <option value="all">Tüm antrenman grupları</option>
+                                        <option value="__none__">Antrenman grubu yok</option>
                                     </select>
                                 </div>
                                 <div class="filter-item">
@@ -1310,7 +1377,7 @@
                             </form>
                         </div>
 
-                        <div class="table-container" style="margin-top: 2rem;">
+                        <div class="table-container section-table-container">
                             <h3 class="form-title">Gider Listesi</h3>
                             <table>
                                 <thead>
@@ -1325,7 +1392,7 @@
                                 <tbody id="giderTableBody">
                                 </tbody>
                             </table>
-                            <div id="giderEmptyState" class="empty-state" style="display: none;">
+                            <div id="giderEmptyState" class="empty-state">
                                 <i class="fa-solid fa-receipt"></i>
                                 <h3>Henüz gider kaydı bulunmuyor</h3>
                                 <p>İlk gider kaydını eklemek için yukarıdaki formu kullanın.</p>
@@ -1346,11 +1413,6 @@
                             <form id="antrenorEkleForm">
                                 <input type="hidden" id="antrenorId">
                                 <div class="form-grid">
-                                    <div class="form-group">
-                                        <label for="antrenorAd">Ad Soyad *</label>
-                                        <input type="text" id="antrenorAd" required>
-                                        <small class="error-text" id="antrenorAdError"></small>
-                                    </div>
                                     <div class="form-group">
                                         <label for="antrenorAd">Ad Soyad *</label>
                                         <input type="text" id="antrenorAd" required>
@@ -1412,7 +1474,7 @@
                             </form>
                         </div>
 
-                        <div class="table-container" style="margin-top: 2rem;">
+                        <div class="table-container section-table-container">
                             <h3 class="form-title">Antrenör Listesi</h3>
                             
                             <div class="antrenor-ozet" id="antrenorOzet">
@@ -1441,7 +1503,7 @@
                                 <tbody id="antrenorTableBody">
                                 </tbody>
                             </table>
-                            <div id="antrenorEmptyState" class="empty-state" style="display: none;">
+                            <div id="antrenorEmptyState" class="empty-state">
                                 <i class="fa-solid fa-user-tie"></i>
                                 <h3>Henüz antrenör kaydı bulunmuyor</h3>
                                 <p>İlk antrenör kaydını eklemek için yukarıdaki formu kullanın.</p>
@@ -1522,7 +1584,7 @@
                                             <div class="form-group">
                                                 <label for="yeniSifreTekrar">Şifre Tekrar *</label>
                                                 <input type="password" id="yeniSifreTekrar" required minlength="4" placeholder="Şifreyi tekrar girin" autocomplete="new-password">
-                                                <small class="form-error" id="sifreUyusmazlik" style="display: none; color: var(--danger); margin-top: 0.25rem;">
+                                                <small class="form-error form-error--password-mismatch" id="sifreUyusmazlik">
                                                     <i class="fa-solid fa-exclamation-circle"></i> Şifreler eşleşmiyor!
                                                 </small>
                                             </div>
@@ -1573,7 +1635,7 @@
                                             <tbody id="kullaniciTableBody">
                                             </tbody>
                                         </table>
-                                        <div id="kullaniciEmptyState" class="empty-state" style="display: none;">
+                                        <div id="kullaniciEmptyState" class="empty-state">
                                             <i class="fa-solid fa-users"></i>
                                             <h3>Henüz kullanıcı bulunmuyor</h3>
                                             <p>Yukarıdaki formdan yeni kullanıcı ekleyin.</p>
@@ -1587,31 +1649,117 @@
                 <!-- Ayarlar View -->
                 <div id="ayarlar" class="view">
                     <div class="card">
-                        <div class="card-header">
-                            <h1><i class="fa-solid fa-cog"></i> Sistem Ayarları</h1>
-                        </div>
-                        
-                        <!-- Hızlı İşlemler Butonları -->
-                        <div class="settings-quick-actions">
-                            <button class="btn btn-success" id="yedekleBtn">
-                                <i class="fa-solid fa-download"></i> Veriyi Yedekle
-                            </button>
-                            <button class="btn" id="geriYukleBtn">
-                                <i class="fa-solid fa-upload"></i> Yedek Geri Yükle
-                            </button>
-                            <input type="file" id="yedekDosya" accept=".json" style="display: none;">
-                            <button class="btn btn-danger" id="sistemiSifirlaBtn">
-                                <i class="fa-solid fa-trash"></i> Sistemi Sıfırla
-                            </button>
+                        <div class="card-header" id="ayarlar-page-intro">
+                            <h1 id="ayarlar-page-title"><i class="fa-solid fa-cog" aria-hidden="true"></i> Sistem Ayarları</h1>
                         </div>
                         
                         <!-- Ana İçerik Grid (Yan Yana) -->
                         <div class="settings-main-grid">
-                            <!-- Sol: Sistem İstatistikleri -->
-                            <div class="settings-main-card">
+                            <!-- Antrenman grupları (tanımlar) — tam genişlik -->
+                            <div class="settings-main-card settings-main-card--antrenman-grup" id="ayarlarAntrenmanGrupCard" role="region" aria-labelledby="ayarlar-heading-antrenman-gruplari" tabindex="-1">
                                 <div class="settings-main-card-header">
-                                    <h3 class="settings-main-card-title">
-                                        <i class="fa-solid fa-chart-simple"></i>
+                                    <h3 class="settings-main-card-title" id="ayarlar-heading-antrenman-gruplari">
+                                        <i class="fa-solid fa-people-group" aria-hidden="true"></i>
+                                        Antrenman grupları
+                                    </h3>
+                                    <p class="settings-main-card-subtitle">
+                                        Branş bazlı grupları burada tanımlayın. Sporculara grup ataması aşağıdaki &quot;Antrenman grubu atamaları&quot; bölümünden veya sporcu kayıt formundan yapılır.
+                                    </p>
+                                </div>
+                                <div class="settings-antrenman-grup-form">
+                                    <div class="form-group settings-antrenman-grup-form__row">
+                                        <label for="ayarlarAntrenmanGrupBrans">Branş</label>
+                                        <select id="ayarlarAntrenmanGrupBrans" class="form-control" aria-label="Grup branşı">
+                                            <option value="">Seçiniz</option>
+                                            <option value="Futbol">Futbol</option>
+                                            <option value="Basketbol">Basketbol</option>
+                                            <option value="Voleybol">Voleybol</option>
+                                            <option value="Yüzme">Yüzme</option>
+                                            <option value="Tenis">Tenis</option>
+                                            <option value="Güreş">Güreş</option>
+                                            <option value="Atletizm">Atletizm</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group settings-antrenman-grup-form__row">
+                                        <label for="ayarlarAntrenmanGrupAd">Grup adı</label>
+                                        <input type="text" id="ayarlarAntrenmanGrupAd" class="form-control" maxlength="120" placeholder="Örn: Elit U-7" autocomplete="off" aria-label="Grup adı">
+                                    </div>
+                                    <button type="button" class="btn btn-success" id="ayarlarAntrenmanGrupEkleBtn">
+                                        <i class="fa-solid fa-plus"></i> Grup ekle
+                                    </button>
+                                </div>
+                                <div class="settings-antrenman-grup-table-wrap">
+                                    <table class="settings-antrenman-grup-table settings-ag-mobile-table" aria-label="Antrenman grupları listesi">
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">Branş</th>
+                                                <th scope="col">Grup adı</th>
+                                                <th scope="col" class="settings-antrenman-grup-table__actions">İşlem</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="ayarlarAntrenmanGrupTabloBody"></tbody>
+                                    </table>
+                                    <p class="settings-antrenman-grup-empty" id="ayarlarAntrenmanGrupEmpty" hidden>
+                                        Henüz tanımlı grup yok. Yukarıdan branş ve grup adı ekleyin.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Antrenman grubu atamaları (sporcular) — tam genişlik -->
+                            <div class="settings-main-card settings-main-card--antrenman-grup settings-main-card--grup-atama" id="ayarlarGrupAtamaCard" role="region" aria-labelledby="ayarlar-heading-grup-atamalari" tabindex="-1">
+                                <div class="settings-main-card-header">
+                                    <h3 class="settings-main-card-title" id="ayarlar-heading-grup-atamalari">
+                                        <i class="fa-solid fa-user-tag" aria-hidden="true"></i>
+                                        Antrenman grubu atamaları
+                                    </h3>
+                                    <p class="settings-main-card-subtitle">
+                                        Önce branş, isteğe bağlı TFF yaş grubu (ör. U-8) seçin; tabloda atama yapın. Liste görünümünde atama yoktur.
+                                    </p>
+                                </div>
+                                <div class="settings-grup-atama-toolbar" role="group" aria-label="Atama filtreleri">
+                                    <div class="settings-grup-atama-toolbar__field">
+                                        <label for="ayarlarGrupAtamaBransFiltre" class="settings-grup-atama-toolbar__label">Branş filtresi</label>
+                                        <select id="ayarlarGrupAtamaBransFiltre" class="form-control settings-grup-atama-toolbar__select" aria-label="Atama tablosu branş filtresi">
+                                            <option value="">Tüm branşlar</option>
+                                            <option value="Futbol">Futbol</option>
+                                            <option value="Basketbol">Basketbol</option>
+                                            <option value="Voleybol">Voleybol</option>
+                                            <option value="Yüzme">Yüzme</option>
+                                            <option value="Tenis">Tenis</option>
+                                            <option value="Güreş">Güreş</option>
+                                            <option value="Atletizm">Atletizm</option>
+                                        </select>
+                                    </div>
+                                    <div class="settings-grup-atama-toolbar__field">
+                                        <label for="ayarlarGrupAtamaYasFiltre" class="settings-grup-atama-toolbar__label">TFF yaş grubu</label>
+                                        <select id="ayarlarGrupAtamaYasFiltre" class="form-control settings-grup-atama-toolbar__select" aria-label="Atama tablosu TFF yaş grubu filtresi">
+                                            <option value="">Tüm yaş grupları</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="settings-antrenman-grup-table-wrap settings-grup-atama-table-wrap">
+                                    <table class="settings-antrenman-grup-table settings-grup-atama-table settings-ag-mobile-table" aria-label="Sporcu antrenman grubu atamaları">
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">Sporcu</th>
+                                                <th scope="col">Branş</th>
+                                                <th scope="col">Yaş grubu (bilgi)</th>
+                                                <th scope="col">Antrenman grubu</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="ayarlarGrupAtamaTabloBody"></tbody>
+                                    </table>
+                                    <p class="settings-antrenman-grup-empty" id="ayarlarGrupAtamaEmpty" hidden>
+                                        Filtreye uygun sporcu yok veya henüz kayıt yok.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Sol: Sistem İstatistikleri -->
+                            <div class="settings-main-card" id="ayarlar-section-istatistikler" role="region" aria-labelledby="ayarlar-heading-istatistikler" tabindex="-1">
+                                <div class="settings-main-card-header">
+                                    <h3 class="settings-main-card-title" id="ayarlar-heading-istatistikler">
+                                        <i class="fa-solid fa-chart-simple" aria-hidden="true"></i>
                                         Sistem İstatistikleri
                                     </h3>
                                 </div>
@@ -1665,10 +1813,10 @@
                             </div>
                             
                             <!-- Sağ: Hatırlatma Ayarları -->
-                            <div class="settings-main-card">
+                            <div class="settings-main-card" id="ayarlar-section-hatirlatmalar" role="region" aria-labelledby="ayarlar-heading-hatirlatmalar" tabindex="-1">
                                 <div class="settings-main-card-header">
-                                    <h3 class="settings-main-card-title">
-                                        <i class="fa-solid fa-bell"></i>
+                                    <h3 class="settings-main-card-title" id="ayarlar-heading-hatirlatmalar">
+                                        <i class="fa-solid fa-bell" aria-hidden="true"></i>
                                         Hatırlatma Ayarları
                                     </h3>
                                 </div>
@@ -1678,23 +1826,23 @@
                             </div>
                             
                             <!-- Başlangıç Bakiyesi -->
-                            <div class="settings-main-card">
+                            <div class="settings-main-card" id="ayarlar-section-baslangic-bakiyesi" role="region" aria-labelledby="ayarlar-heading-baslangic-bakiyesi" tabindex="-1">
                                 <div class="settings-main-card-header">
-                                    <h3 class="settings-main-card-title">
-                                        <i class="fa-solid fa-wallet"></i>
+                                    <h3 class="settings-main-card-title" id="ayarlar-heading-baslangic-bakiyesi">
+                                        <i class="fa-solid fa-wallet" aria-hidden="true"></i>
                                         Başlangıç Bakiyesi (İlk Kurulum)
                                     </h3>
-                                    <p class="settings-main-card-subtitle" style="margin-top: 0.5rem; color: var(--muted); font-size: 0.875rem;">
+                                    <p class="settings-main-card-subtitle">
                                         Sistem kurulumunda mevcut nakit ve banka bakiyenizi girin. Bu, sistemin başlangıç durumunu belirler.
                                     </p>
                                 </div>
-                                <form id="baslangicBakiyesiForm" class="form" style="padding: 1rem;">
+                                <form id="baslangicBakiyesiForm" class="form">
                                     <div class="form-group">
                                         <label for="baslangicNakit">
                                             <i class="fa-solid fa-money-bill-wave"></i> Başlangıç Nakit (TL)
                                         </label>
                                         <input type="text" id="baslangicNakit" placeholder="0,00" data-format="money">
-                                        <small style="color: var(--muted); font-size: 0.875rem;">
+                                        <small>
                                             Sistem kurulumunda kasada bulunan nakit para miktarı
                                         </small>
                                     </div>
@@ -1703,7 +1851,7 @@
                                             <i class="fa-solid fa-university"></i> Başlangıç Banka Bakiyesi (TL)
                                         </label>
                                         <input type="text" id="baslangicBanka" placeholder="0,00" data-format="money">
-                                        <small style="color: var(--muted); font-size: 0.875rem;">
+                                        <small>
                                             Sistem kurulumunda banka hesabında bulunan para miktarı
                                         </small>
                                     </div>
@@ -1712,7 +1860,7 @@
                                             <i class="fa-solid fa-calendar"></i> Bakiyenin Geçerli Olduğu Tarih
                                         </label>
                                         <input type="date" id="baslangicBakiyeTarih" required>
-                                        <small style="color: var(--muted); font-size: 0.875rem;">
+                                        <small>
                                             Bu bakiyenin geçerli olduğu tarih (genellikle sistem kurulum tarihi)
                                         </small>
                                     </div>
@@ -1723,13 +1871,27 @@
                             </div>
                         </div>
                         
+                        <!-- Hızlı İşlemler (yedek / sıfırla) -->
+                        <div class="settings-quick-actions" id="ayarlar-section-hizli-islemler" role="region" aria-label="Hızlı işlemler: yedekleme ve sıfırlama" tabindex="-1">
+                            <button class="btn btn-success" id="yedekleBtn">
+                                <i class="fa-solid fa-download"></i> Veriyi Yedekle
+                            </button>
+                            <button class="btn" id="geriYukleBtn">
+                                <i class="fa-solid fa-upload"></i> Yedek Geri Yükle
+                            </button>
+                            <input type="file" id="yedekDosya" class="settings-file-input-hidden" accept=".json">
+                            <button class="btn btn-danger" id="sistemiSifirlaBtn">
+                                <i class="fa-solid fa-trash"></i> Sistemi Sıfırla
+                            </button>
+                        </div>
+                        
                         <!-- Hakkında (Alt) -->
-                        <div class="settings-about">
+                        <div class="settings-about" id="ayarlar-section-hakkinda" role="region" aria-label="Uygulama hakkında" tabindex="-1">
                             <div class="settings-about-content">
                                 <i class="fa-solid fa-info-circle"></i>
                                 <div>
-                                    <strong>SOY-BIS</strong> - Spor Okulları Yönetim Bilgi Sistemi v2.0.0 (Modüler)
-                                    <span style="color: var(--muted); margin-left: var(--spacing-sm);">© 2024</span>
+                                    <strong>SOYBIS 360°</strong> - Spor Okulları Yönetim Bilgi Sistemi v2.0.0 (Modüler)
+                                    <span class="settings-footer-year">© 2024</span>
                                 </div>
                             </div>
                         </div>
@@ -1740,7 +1902,7 @@
     </div>
 
     <!-- Malzeme Ekle Modal -->
-    <div id="malzemeEkleModal" class="modal" style="display: none !important;">
+    <div id="malzemeEkleModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
                 <h2><i class="fa-solid fa-box"></i> Malzeme Ekle</h2>
@@ -1772,13 +1934,15 @@
     </div>
 
     <!-- Ödeme Modal -->
-    <div id="odemeModal" class="modal" style="display: none !important;">
+    <div id="odemeModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
                 <h2><i class="fa-solid fa-credit-card"></i> Ödeme Kaydı</h2>
                 <button class="modal-close" id="odemeModalKapat">&times;</button>
             </div>
             <div class="modal-body">
+                <!-- Dönem özeti: önce sporcu/dönem seçilince güncellenir (ödedi / kısmi / ödemedi) -->
+                <div id="donemBorcBilgisi" class="donem-borc-bilgisi" hidden aria-live="polite"></div>
                 <div class="form-group">
                     <label>Sporcu Seç</label>
                     <select id="odemeSporcuSelect"></select>
@@ -1790,7 +1954,7 @@
                         <option value="Malzeme">Malzeme Borcu Ekle (Forma, Eşofman, vb.)</option>
                     </select>
                 </div>
-                <div class="form-group" id="odemeAciklamaGroup" style="display: none;">
+                <div class="form-group" id="odemeAciklamaGroup">
                     <label>Malzeme Açıklaması</label>
                     <input type="text" id="odemeAciklama" placeholder="Örn: Forma Ücreti, Eşofman Ücreti">
                 </div>
@@ -1829,7 +1993,7 @@
     </div>
 
     <!-- Ödeme Geçmişi Modal -->
-    <div id="odemeGecmisiModal" class="modal" style="display: none !important;">
+    <div id="odemeGecmisiModal" class="modal">
         <div class="modal-content modal-lg">
             <div class="modal-header">
                 <h2><i class="fa-solid fa-history"></i> Ödeme Geçmişi</h2>
@@ -1847,7 +2011,7 @@
     <div id="toastContainer" class="toast-container"></div>
 
     <!-- Sporcu Detay Raporu View -->
-    <div id="sporcu-detay-raporu" class="view" style="display: none;">
+    <div id="sporcu-detay-raporu" class="view">
         <div class="sporcu-rapor-container">
             <!-- Header -->
             <div class="rapor-header">

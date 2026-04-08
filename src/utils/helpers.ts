@@ -86,6 +86,17 @@ export function paraFormat(sayi: number | string | null | undefined, kisaFormat 
 }
 
 /**
+ * Uygulama logosu (`public/logo.png` → `/logo.png`).
+ * PDF/html2canvas için tam URL; aynı kökende CORS sorunu olmaz.
+ */
+export function soybisLogoUrl(): string {
+  if (typeof window === 'undefined' || !window.location?.origin) {
+    return '/logo.png';
+  }
+  return `${window.location.origin}/logo.png`;
+}
+
+/**
  * Input için para formatı (yazarken)
  * Kullanıcı yazarken otomatik olarak binlik ayırıcı ekler
  * @param input - Formatlanacak input elementi
@@ -453,22 +464,62 @@ export function $$(selector: string): NodeListOf<HTMLElement> {
 
 type ToastType = 'success' | 'error' | 'warning' | 'info';
 
+/** Aynı mesaj+tür tekrarını bastırma (API senkron uyarısı yağmurunu önler). */
+const TOAST_DEDUPE_MS = 4500;
+/** Üst üste çok toast — ekranı doldurmasın; en eski kaldırılır. */
+const TOAST_MAX_VISIBLE = 5;
+
+const toastLastShown = new Map<string, number>();
+
+function toastDedupeKey(message: string, type: ToastType): string {
+  return `${type}:${message}`;
+}
+
+function pruneToastDedupeMap(now: number): void {
+  if (toastLastShown.size <= 64) {
+    return;
+  }
+  const cutoff = now - TOAST_DEDUPE_MS * 3;
+  for (const [k, t] of toastLastShown) {
+    if (t < cutoff) {
+      toastLastShown.delete(k);
+    }
+  }
+}
+
 /**
  * Toast bildirimi göster
  * Kullanıcıya geçici bildirim mesajı gösterir
  * @param message - Gösterilecek mesaj
  * @param type - Bildirim tipi (success, error, warning, info)
  * @param duration - Gösterim süresi (milisaniye)
+ * @param bypassThrottle - true ise aynı mesaj süre kısıtına takılmaz (kritik tek seferlik uyarılar)
  */
-export function toast(message: string, type: ToastType = 'info', duration = 3000): void {
+export function toast(
+  message: string,
+  type: ToastType = 'info',
+  duration = 3000,
+  bypassThrottle = false
+): void {
   try {
-    console.log('🔔 [Toast] Toast çağrıldı:', { message, type, duration });
+    const now = Date.now();
+    if (!bypassThrottle) {
+      const key = toastDedupeKey(message, type);
+      const last = toastLastShown.get(key) ?? 0;
+      if (now - last < TOAST_DEDUPE_MS) {
+        log('debug', '[Toast] throttled (aynı mesaj):', message);
+        return;
+      }
+      toastLastShown.set(key, now);
+      pruneToastDedupeMap(now);
+    }
+
+    log('debug', '[Toast]', { message, type, duration });
     const container = $('#toastContainer');
     if (!container) {
       console.warn('❌ [Toast] #toastContainer bulunamadı');
       return;
     }
-    console.log('✅ [Toast] Container bulundu:', container);
 
     // Icon mapping
     const icons: Record<ToastType, string> = {
@@ -490,6 +541,11 @@ export function toast(message: string, type: ToastType = 'info', duration = 3000
         `,
       true
     );
+
+    const existing = container.querySelectorAll('.toast');
+    if (existing.length >= TOAST_MAX_VISIBLE) {
+      existing[0]?.remove();
+    }
 
     container.appendChild(toastEl);
 
@@ -612,6 +668,33 @@ export function slugify(str: string): string {
     console.error('slugify hatası:', error);
     return '';
   }
+}
+
+/**
+ * Ad Soyad metnini Türkçe kurallara göre baş harfleri büyük olacak şekilde normalize eder.
+ * Örnek: "aHMET yILMAZ" -> "Ahmet Yılmaz", "ali-veli o'brien" -> "Ali-Veli O'Brien"
+ */
+export function adSoyadFormatla(text: string | null | undefined): string {
+  if (!text) return '';
+
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+
+  const capitalizeToken = (token: string): string => {
+    const lower = token.toLocaleLowerCase('tr-TR');
+    const first = lower.charAt(0).toLocaleUpperCase('tr-TR');
+    return first + lower.slice(1);
+  };
+
+  return normalized
+    .split(' ')
+    .map(word =>
+      word
+        .split(/([-'’])/)
+        .map(part => (/^[-'’]$/.test(part) ? part : capitalizeToken(part)))
+        .join('')
+    )
+    .join(' ');
 }
 
 /**
@@ -1025,9 +1108,11 @@ export function createBadge(type: BadgeType, text: string): string {
  * @param durum - Sporcu durumu
  * @returns HTML string
  */
-export function createDurumBadge(durum: 'Aktif' | 'Pasif'): string {
+export function createDurumBadge(durum: 'Aktif' | 'Pasif' | 'Ayrıldı'): string {
   try {
-    return durum === 'Aktif' ? createBadge('success', 'Aktif') : createBadge('danger', 'Pasif');
+    if (durum === 'Aktif') return createBadge('success', 'Aktif');
+    if (durum === 'Ayrıldı') return createBadge('info', 'Ayrıldı');
+    return createBadge('danger', 'Pasif');
   } catch (error) {
     console.error('createDurumBadge hatası:', error);
     return createBadge('info', durum);
@@ -1390,8 +1475,14 @@ if (typeof window !== 'undefined') {
  * Borç ve tahsilat hesaplama mantığını merkezileştirir
  */
 export interface FinansalHesaplama {
+  /** Brüt borç tahakkuku (Aidat + boş tür + Malzeme; pozitif satırlar) */
   toplamBorc: number;
+  /** Tahakkuk kalemi: Aidat ve türü belirtilmemiş borç satırları */
+  tahakkukAidat: number;
+  /** Tahakkuk kalemi: Malzeme borç satırları */
+  tahakkukMalzeme: number;
   toplamTahsilat: number;
+  /** Net ödenecek tutar (outstanding) */
   kalanBorc: number;
   fazlaOdeme: number;
 }
@@ -1434,7 +1525,13 @@ export function gelecekAylarFiltresi(
 }
 
 /**
- * Sporcu için finansal hesaplama yapar
+ * Sporcu için finansal hesaplama yapar (satır bazlı, dönemAy/Yıl eşleşmesi).
+ *
+ * Aidat ekranı / dashboard üst KPI ile birebir aynı değildir: liste görünümü
+ * `buDonemOdemeleriFiltrele` ile tarih ve ödeme tarihini de döneme bağlar;
+ * burada yalnızca `donemAy`/`donemYil` alanları filtrelenir. Dashboard ve
+ * “Alacakların toplamı” için `aidatDonemKpiOzet` / `aidatGuncelDonemKpiOzet` kullanın.
+ *
  * @param aidatlar - Tüm aidat kayıtları
  * @param sporcuId - Sporcu ID
  * @param donemAy - Dönem ayı (opsiyonel, tüm dönemler için null)
@@ -1484,13 +1581,26 @@ export function finansalHesapla(
     filtrelenmisAidatlar = filtrelenmisAidatlar.filter(a => gelecekAylarFiltresi(a, buAy, buYil));
   }
 
-  // Borçları hesapla (pozitif tutarlar: Aidat, Malzeme veya islem_turu yok)
-  const toplamBorc = filtrelenmisAidatlar
-    .filter(
-      a =>
-        (a.tutar || 0) > 0 &&
-        (a.islem_turu === 'Aidat' || a.islem_turu === 'Malzeme' || !a.islem_turu)
-    )
+  type AidatSatir = (typeof filtrelenmisAidatlar)[0];
+  const borcTahakkukuSatiri = (a: AidatSatir) =>
+    (a.tutar || 0) > 0 && (a.islem_turu === 'Aidat' || a.islem_turu === 'Malzeme' || !a.islem_turu);
+
+  /** Ödenmemiş borç satırları — kalan borç bu tutar üzerinden düşer (Ödendi satırları ödeme geçmişinde kapatılmış sayılır) */
+  const borcTahakkukuAcik = (a: AidatSatir) =>
+    borcTahakkukuSatiri(a) && (a as { odemeDurumu?: string }).odemeDurumu !== 'Ödendi';
+
+  // Brüt tahakkuk (Aidat + Malzeme + tür yok) — raporlarda "ne kesildi"
+  const tahakkukMalzeme = filtrelenmisAidatlar
+    .filter(a => borcTahakkukuSatiri(a) && a.islem_turu === 'Malzeme')
+    .reduce((t, a) => t + (a.tutar || 0), 0);
+  const tahakkukAidat = filtrelenmisAidatlar
+    .filter(a => borcTahakkukuSatiri(a) && a.islem_turu !== 'Malzeme')
+    .reduce((t, a) => t + (a.tutar || 0), 0);
+  const toplamBorc = tahakkukAidat + tahakkukMalzeme;
+
+  // Açık borç tutarı (Ödendi işaretli satırlar düşülür — çift kayıt veya yalnızca işaretli kapanış)
+  const acikBorcToplam = filtrelenmisAidatlar
+    .filter(borcTahakkukuAcik)
     .reduce((t, a) => t + (a.tutar || 0), 0);
 
   // Tahsilatları hesapla (negatif tutarlar veya islem_turu='Tahsilat')
@@ -1498,12 +1608,14 @@ export function finansalHesapla(
     .filter(a => (a.tutar || 0) < 0 || a.islem_turu === 'Tahsilat')
     .reduce((t, a) => t + Math.abs(a.tutar || 0), 0);
 
-  // Kalan borç ve fazla ödeme
-  const kalanBorc = Math.max(0, toplamBorc - toplamTahsilat);
+  // Kalan borç: açık borç − tahsilat; fazla: tahsilat − brüt tahakkuk (uluslararası ödeme fazlası tanımı)
+  const kalanBorc = Math.max(0, acikBorcToplam - toplamTahsilat);
   const fazlaOdeme = Math.max(0, toplamTahsilat - toplamBorc);
 
   return {
     toplamBorc,
+    tahakkukAidat,
+    tahakkukMalzeme,
     toplamTahsilat,
     kalanBorc,
     fazlaOdeme,

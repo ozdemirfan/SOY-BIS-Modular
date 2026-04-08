@@ -493,7 +493,7 @@ const Storage = (function() {
         
         const link = document.createElement('a');
         link.href = url;
-        link.download = `SOYBIS_Yedek_${new Date().toLocaleDateString('tr-TR').replace(/\./g, '-')}.json`;
+        link.download = `SOYBIS360_Yedek_${new Date().toLocaleDateString('tr-TR').replace(/\./g, '-')}.json`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

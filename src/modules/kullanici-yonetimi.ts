@@ -38,6 +38,9 @@ declare global {
 // Güncellenecek kullanıcı ID'si
 let guncellenecekKullaniciId: number | null = null;
 
+/** init() birden çağrıldığında (startup + view geçişi) submit dinleyicisi tekrar eklenmesin; aksi halde çift toast ve boş validasyon hatası oluşur. */
+let kullaniciFormEventleriBagli = false;
+
 /**
  * Modülü başlat
  */
@@ -57,17 +60,23 @@ export function init(): void {
  * Kullanıcı yönetimi eventlerini bağla
  */
 function kullaniciYonetimiEventleri(): void {
+  if (kullaniciFormEventleriBagli) {
+    return;
+  }
+
   const form = Helpers.$('#kullaniciEkleForm');
+  if (!form) {
+    return;
+  }
+
+  form.addEventListener('submit', async function (e: Event) {
+    e.preventDefault();
+    await kullaniciKaydet();
+  });
+
   const temizleBtn = Helpers.$('#kullaniciFormTemizle');
   const sifreInput = Helpers.$('#yeniSifre') as HTMLInputElement | null;
   const sifreTekrarInput = Helpers.$('#yeniSifreTekrar') as HTMLInputElement | null;
-
-  if (form) {
-    form.addEventListener('submit', async function (e: Event) {
-      e.preventDefault();
-      await kullaniciKaydet();
-    });
-  }
 
   if (temizleBtn) {
     temizleBtn.addEventListener('click', formuTemizle);
@@ -83,13 +92,13 @@ function kullaniciYonetimiEventleri(): void {
 
       if (sifreTekrar.length > 0) {
         if (sifre !== sifreTekrar) {
-          if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).style.display = 'block';
+          if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).classList.add('is-visible');
           if (sifreTekrarInput) {
             sifreTekrarInput.setCustomValidity('Şifreler eşleşmiyor');
             sifreTekrarInput.classList.add('error');
           }
         } else {
-          if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).style.display = 'none';
+          if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).classList.remove('is-visible');
           if (sifreTekrarInput) {
             sifreTekrarInput.setCustomValidity('');
             sifreTekrarInput.classList.remove('error');
@@ -99,7 +108,7 @@ function kullaniciYonetimiEventleri(): void {
           }
         }
       } else {
-        if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).style.display = 'none';
+        if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).classList.remove('is-visible');
         if (sifreTekrarInput) {
           sifreTekrarInput.setCustomValidity('');
           sifreTekrarInput.classList.remove('error', 'validated-success');
@@ -114,6 +123,8 @@ function kullaniciYonetimiEventleri(): void {
       sifreTekrarInput.addEventListener('input', sifreKontrol);
     }
   }
+
+  kullaniciFormEventleriBagli = true;
 }
 
 /**
@@ -161,7 +172,7 @@ async function kullaniciKaydet(): Promise<void> {
   if (sifre !== sifreTekrar) {
     Helpers.toast('Şifreler eşleşmiyor!', 'error');
     const sifreUyusmazlikEl = Helpers.$('#sifreUyusmazlik');
-    if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).style.display = 'block';
+    if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).classList.add('is-visible');
     return;
   }
 
@@ -212,7 +223,7 @@ export function formuTemizle(): void {
 
   // Şifre uyuşmazlık mesajını gizle
   const sifreUyusmazlikEl = Helpers.$('#sifreUyusmazlik');
-  if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).style.display = 'none';
+  if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).classList.remove('is-visible');
 
   // Input class'larını temizle
   const sifreInput = Helpers.$('#yeniSifre') as HTMLInputElement | null;
@@ -327,7 +338,7 @@ export function kullaniciListesiniGuncelle(): void {
       </div>`,
         ],
         {
-          labels: ['Kullanıcı Adı', 'Ad Soyad', 'Rol', 'E-posta', 'Durum', ''],
+          labels: ['Kullanıcı Adı', 'Ad Soyad', 'Rol', 'E-posta', 'Durum', 'İşlemler'],
         }
       );
 
@@ -370,7 +381,7 @@ export function kullaniciDuzenle(id: number): void {
 
   // Şifre uyuşmazlık mesajını gizle
   const sifreUyusmazlikEl = Helpers.$('#sifreUyusmazlik');
-  if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).style.display = 'none';
+  if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).classList.remove('is-visible');
 
   const form = Helpers.$('#kullaniciEkleForm');
   const kaydetBtn = form?.querySelector('button[type="submit"]');

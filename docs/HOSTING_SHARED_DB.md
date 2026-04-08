@@ -7,6 +7,14 @@ Bu doküman, SOY-BIS’i tarayıcıdaki `localStorage` modundan **paylaşımlı 
 - cPanel içinde `mod_rewrite` (veya benzeri URL rewrite) çalışıyorsa önerilir.
 - Front-end statik dosyalar için `dist/` web köküne yüklenecek.
 
+### Kurulum kontrol listesi
+- [ ] MySQL veritabanı + kullanıcı oluşturuldu, kullanıcıya DB yetkisi verildi
+- [ ] `docs/db_schema_mysql.sql` içe aktarıldı
+- [ ] `api/config.php` içinde `db.*` ve gerekirse `default_admin` güncellendi
+- [ ] `api/` klasörü web kökünde `/api` altında; `api/.htaccess` mevcut
+- [ ] Front-end build’de `VITE_SOYBIS_API_BASE` doğru (çoğu kurulum: `/api`)
+- [ ] HTTPS kullanılıyorsa `api/config.php` içinde `session.secure` → `true` (ve tarayıcıda çerezlerin çalıştığı doğrulandı)
+
 ## 1. MySQL şemayı kur
 1. cPanel -> MySQL Databases içinde:
    - Veritabanı oluşturun
@@ -68,4 +76,9 @@ Frontend’ten çağrılan backend akışları:
 - `POST /api/system/reset` (Admin şifresi ister)
 
 Detay: `docs/BACKUP_RESTORE_SHARED_DB.md`
+
+## 8. Farklı origin (frontend ve API ayrı domain)
+- Front-end `fetch` çağrıları `credentials: 'include'` kullanır; API tarafında `api/index.php` içindeki CORS başlıkları buna uygundur.
+- Çerezin tarayıcıya yazılması için: API ile uygulama arasında güven ilişkisi (HTTPS, `SameSite=None; Secure` gerekebilir) hosting ayarlarından doğrulanmalıdır.
+- En sorunsuz kurulum: statik `dist/` ve `api/` **aynı site** üzerinde (ör. `https://alanadiniz.com/` + `https://alanadiniz.com/api/`) ve `VITE_SOYBIS_API_BASE=/api`.
 

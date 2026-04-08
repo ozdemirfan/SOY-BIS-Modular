@@ -3,8 +3,7 @@
  * Modern TypeScript + Vite Architecture
  */
 
-// Import styles
-import './styles/main.css';
+// Stiller index.html’de <link> ile yüklenir (ilk boyama öncesi); çift yükleme olmaması için burada import yok.
 
 // Import external libraries (for global access)
 import * as XLSX from 'xlsx';
@@ -13,6 +12,8 @@ import html2pdf from 'html2pdf.js';
 
 // Import app module
 import { init as initApp, exposeModulesToWindow } from './app';
+import { whenAppShellReady } from './app/appShellReady';
+import { initMobileScrollWheelFix } from './utils/mobileScrollWheelFix';
 
 // Expose libraries to global window for backward compatibility
 if (typeof window !== 'undefined') {
@@ -20,13 +21,17 @@ if (typeof window !== 'undefined') {
   (window as any).html2pdf = html2pdf;
 }
 
-// Initialize application when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
+function startApp(): void {
   console.log('SOY-BIS v3.0 - Initializing...');
+
+  initMobileScrollWheelFix();
 
   // Önce modülleri window'a expose et
   exposeModulesToWindow();
 
   // Sonra uygulamayı başlat
-  initApp();
-});
+  void initApp();
+}
+
+// Tam index.html (sidebar + #mainNav) yoksa modül init’leri boş DOM ile koşuyordu — kabuk hazır olunca başlat
+whenAppShellReady(startApp);

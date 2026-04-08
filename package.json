@@ -1,7 +1,7 @@
 {
   "name": "soy-bis",
   "version": "3.0.0",
-  "description": "Spor Okulları Yönetim Bilgi Sistemi - Modern Architecture",
+  "description": "SOYBIS 360° — Spor Okulları Yönetim Bilgi Sistemi",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -16,7 +16,10 @@ function sporcular_get_all(): void {
   foreach ($rows as $r) {
     $data = json_decode((string)$r['data'], true);
     if (!is_array($data)) $data = [];
-    $data['id'] = (int)$r['id'];
+    $colId = (int)$r['id'];
+    $jsonId = isset($data['id']) ? (int)$data['id'] : 0;
+    // JSON’daki id öncelikli: PK kolonu INT iken taşma (2147483647) olmuş eski satırlarda doğru id JSON’da kalır.
+    $data['id'] = $jsonId > 0 ? $jsonId : $colId;
     $result[] = $data;
   }
   respondJson($result);
@@ -51,58 +54,48 @@ function sporcular_upsert(): void {
   respondJson($data);
 }
 
+/**
+ * Eski istemciler için DELETE hâlâ çağrılabilir: kayıt silinmez;
+ * sporcu "Ayrıldı" yapılır, aidat / yoklama dokunulmaz.
+ * İsteğe bağlı JSON: { "kaynak": "kendi" | "yonetici" }
+ */
 function sporcular_delete(int $id): void {
   soybis_session_start();
   require_login();
 
-  $pdo = db();
-  $pdo->beginTransaction();
-  try {
-    $stmt = $pdo->prepare("DELETE FROM sporcular WHERE id = :id");
-    $stmt->execute([':id' => $id]);
-
-    // Aidatlar tablosundan ilgili sporcuya ait kayıtları sil.
-    $stmt2 = $pdo->prepare("DELETE FROM aidatlar WHERE sporcuId = :id");
-    $stmt2->execute([':id' => $id]);
-
-    // Yoklamalar JSON içinden sporcu referansını kaldır.
-    $stmt3 = $pdo->query("SELECT tarih, grup, data FROM yoklamalar");
-    $rows = $stmt3->fetchAll();
-
-    foreach ($rows as $r) {
-      $data = json_decode((string)$r['data'], true);
-      if (!is_array($data)) continue;
-
-      if (!isset($data['sporcular']) || !is_array($data['sporcular'])) continue;
-
-      $data['sporcular'] = array_values(array_filter(
-        $data['sporcular'],
-        fn($p) => isset($p['id']) && (int)$p['id'] !== $id
-      ));
-
-      $tarih = (string)$r['tarih'];
-      $grup = (string)$r['grup'];
-
-      if (count($data['sporcular']) === 0) {
-        $stmtDel = $pdo->prepare("DELETE FROM yoklamalar WHERE tarih = :t AND grup = :g");
-        $stmtDel->execute([':t' => $tarih, ':g' => $grup]);
-      } else {
-        $stmtUp = $pdo->prepare("REPLACE INTO yoklamalar (tarih, grup, data) VALUES (:t, :g, :data)");
-        $stmtUp->execute([
-          ':t' => $tarih,
-          ':g' => $grup,
-          ':data' => json_encode($data, JSON_UNESCAPED_UNICODE),
-        ]);
-      }
-    }
-
-    $pdo->commit();
-  } catch (Throwable $e) {
-    $pdo->rollBack();
-    respondJson(['error' => 'delete failed', 'detail' => $e->getMessage()], 500);
+  $body = getJsonBody();
+  $kaynak = 'yonetici';
+  if (isset($body['kaynak']) && ($body['kaynak'] === 'kendi' || $body['kaynak'] === 'yonetici')) {
+    $kaynak = (string)$body['kaynak'];
   }
+
+  $pdo = db();
+  $stmt = $pdo->prepare("SELECT id, data FROM sporcular WHERE id = :id");
+  $stmt->execute([':id' => $id]);
+  $row = $stmt->fetch();
+  if (!$row) {
+    respondJson(['ok' => true]);
+    return;
+  }
+
+  $data = json_decode((string)$row['data'], true);
+  if (!is_array($data)) {
+    $data = [];
+  }
+  $data['id'] = $id;
+  $data['durum'] = 'Ayrıldı';
+  $data['silinmeBilgisi'] = [
+    'tarih' => gmdate('c'),
+    'kaynak' => $kaynak,
+  ];
+
+  $stmtUp = $pdo->prepare("REPLACE INTO sporcular (id, data) VALUES (:id, :data)");
+  $stmtUp->execute([
+    ':id' => $id,
+    ':data' => json_encode($data, JSON_UNESCAPED_UNICODE),
+  ]);
+
   respondJson(['ok' => true]);
 }
 
 ?>
-

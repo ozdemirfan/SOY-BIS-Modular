@@ -14,8 +14,241 @@
 
 import * as Helpers from '../utils/helpers';
 import * as Storage from '../utils/storage';
-import type { Sporcu } from '../types';
+import type { Sporcu, AntrenmanGrubu } from '../types';
 import { apiPost } from '../services/apiClient';
+
+/** Sporcu listesiyle aynı: merkezi gruba atanmamış */
+const YOKLAMA_AG_YOK = '__none__';
+
+/** Veri ile filtre arasında (U21 vs U21+ gibi) gevşek eşleşme */
+function tffDegerleriEslesirMi(kayitAnaGrup: string | undefined, filtreTff: string): boolean {
+  const a = (kayitAnaGrup || '').trim();
+  const b = (filtreTff || '').trim();
+  if (!b || b === 'all') return true;
+  if (a === b) return true;
+  const u21 = new Set(['U21', 'U21+']);
+  if (u21.has(a) && u21.has(b)) return true;
+  return false;
+}
+
+function antrenmanGrubuBransEslesirMi(grup: AntrenmanGrubu, sporcuBrans: string): boolean {
+  const gb = (grup.brans || '').trim().toLowerCase();
+  const sb = sporcuBrans.trim().toLowerCase();
+  if (!gb) return true;
+  return gb === sb;
+}
+
+/** Aktif sporcular içinde en çok kayıtlı branş (eşitlikte Türkçe alfada ilk) */
+function yoklamaEnCokKullanilanBrans(sporcular: Sporcu[]): string | null {
+  const say = new Map<string, number>();
+  for (const s of sporcular) {
+    const b = (s.sporBilgileri?.brans || '').trim();
+    if (!b) continue;
+    say.set(b, (say.get(b) ?? 0) + 1);
+  }
+  if (say.size === 0) return null;
+  const sirali = [...say.entries()].sort((a, b) => {
+    if (b[1] !== a[1]) return b[1] - a[1];
+    return a[0].localeCompare(b[0], 'tr');
+  });
+  return sirali[0]?.[0] ?? null;
+}
+
+function antrenmanGruplariYoklamaIcin(brans: string): AntrenmanGrubu[] {
+  const tum = Storage.antrenmanGruplariGetir();
+  if (!brans || brans === 'all') {
+    return [...tum].sort((a, b) => {
+      const ba = (a.brans || '').localeCompare(b.brans || '', 'tr');
+      if (ba !== 0) return ba;
+      return a.ad.localeCompare(b.ad, 'tr');
+    });
+  }
+  return tum
+    .filter(g => antrenmanGrubuBransEslesirMi(g, brans))
+    .sort((a, b) => a.ad.localeCompare(b.ad, 'tr'));
+}
+
+/** Depolama `grup` alanı: çoklu filtre + eski tek TFF/`all` kayıtlarıyla uyum için v2 JSON önekli anahtar */
+export function yoklamaOturumAnahtari(brans: string, tff: string, ag: string): string {
+  const b = !brans || brans === 'all' ? null : brans.trim();
+  const t = !tff || tff === 'all' ? null : tff.trim();
+  let g: string | null;
+  if (!ag || ag === 'all') g = null;
+  else if (ag === YOKLAMA_AG_YOK) g = YOKLAMA_AG_YOK;
+  else g = ag.trim();
+  return 'v2:' + JSON.stringify({ b, t, g });
+}
+
+function yoklamaKaydiBul(tarih: string, brans: string, tff: string, ag: string) {
+  const key = yoklamaOturumAnahtari(brans, tff, ag);
+  let y = Storage.yoklamaBul(tarih, key);
+  if (y) return y;
+  const bAll = !brans || brans === 'all';
+  const tSpecific = Boolean(tff && tff !== 'all');
+  const gAll = !ag || ag === 'all';
+  if (bAll && tSpecific && gAll) {
+    y = Storage.yoklamaBul(tarih, tff);
+    if (y) return y;
+  }
+  if (bAll && (!tff || tff === 'all') && gAll) {
+    y = Storage.yoklamaBul(tarih, 'all');
+    if (y) return y;
+  }
+  return null;
+}
+
+function yoklamaFiltreDegerleri(): {
+  brans: string;
+  tff: string;
+  ag: string;
+  tarih: string;
+  oturumAnahtari: string;
+} {
+  const brans = (Helpers.$('#yoklamaBrans') as HTMLSelectElement | null)?.value || 'all';
+  const tff = (Helpers.$('#yoklamaTffYas') as HTMLSelectElement | null)?.value || 'all';
+  const ag = (Helpers.$('#yoklamaAntrenmanGrubu') as HTMLSelectElement | null)?.value || 'all';
+  const tarih = (Helpers.$('#yoklamaTarih') as HTMLInputElement | null)?.value || Helpers.bugunISO();
+  return {
+    brans,
+    tff,
+    ag,
+    tarih,
+    oturumAnahtari: yoklamaOturumAnahtari(brans, tff, ag),
+  };
+}
+
+export function sporcularYoklamaFiltresindenGecir(brans: string, tff: string, ag: string): Sporcu[] {
+  return Storage.sporculariGetir().filter(s => {
+    if (s.durum !== 'Aktif') return false;
+    if (brans && brans !== 'all') {
+      if ((s.sporBilgileri?.brans || '').trim().toLowerCase() !== brans.trim().toLowerCase()) {
+        return false;
+      }
+    }
+    if (tff && tff !== 'all') {
+      if (!tffDegerleriEslesirMi(s.tffGruplari?.anaGrup, tff)) return false;
+    }
+    if (ag && ag !== 'all') {
+      if (ag === YOKLAMA_AG_YOK) {
+        if (s.antrenmanGrubuId) return false;
+      } else if (s.antrenmanGrubuId !== ag) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+function yoklamaAntrenmanGrubuSecenekleriniDoldur(preserveValue?: string): void {
+  const sel = Helpers.$('#yoklamaAntrenmanGrubu') as HTMLSelectElement | null;
+  const bransSel = Helpers.$('#yoklamaBrans') as HTMLSelectElement | null;
+  if (!sel) return;
+  const brans = bransSel?.value || 'all';
+  const prev = preserveValue !== undefined ? preserveValue : sel.value;
+  const gruplar = antrenmanGruplariYoklamaIcin(brans);
+  sel.innerHTML = '';
+  const o0 = document.createElement('option');
+  o0.value = 'all';
+  o0.textContent = 'Tüm antrenman grupları';
+  sel.appendChild(o0);
+  const oNone = document.createElement('option');
+  oNone.value = YOKLAMA_AG_YOK;
+  oNone.textContent = 'Antrenman grubu yok';
+  sel.appendChild(oNone);
+  for (const g of gruplar) {
+    const opt = document.createElement('option');
+    opt.value = g.id;
+    opt.textContent = g.brans ? `${g.ad} (${g.brans})` : g.ad;
+    sel.appendChild(opt);
+  }
+  if (prev === YOKLAMA_AG_YOK || prev === 'all' || gruplar.some(x => x.id === prev)) {
+    sel.value = prev;
+  } else {
+    sel.value = 'all';
+  }
+}
+
+/** Standart liste + aktif sporcularda görünen tüm anaGrup değerleri (U21+ vb.) */
+function yoklamaTffSecenekDegerleri(): string[] {
+  const ekstra = new Set<string>();
+  Storage.sporculariGetir()
+    .filter(s => s.durum === 'Aktif')
+    .forEach(s => {
+      const v = (s.tffGruplari?.anaGrup || '').trim();
+      if (v) ekstra.add(v);
+    });
+  const bilinen = new Set<string>(Helpers.YAS_GRUPLARI as unknown as string[]);
+  const ekstraSirali = [...ekstra]
+    .filter(x => !bilinen.has(x))
+    .sort((a, b) => a.localeCompare(b, 'tr'));
+  return [...(Helpers.YAS_GRUPLARI as readonly string[]), ...ekstraSirali];
+}
+
+function yoklamaBransVeTffDoldur(): void {
+  const bransSel = Helpers.$('#yoklamaBrans') as HTMLSelectElement | null;
+  const tffSel = Helpers.$('#yoklamaTffYas') as HTMLSelectElement | null;
+  if (bransSel) {
+    const prevB = bransSel.value;
+    const sporcular = Storage.sporculariGetir().filter(s => s.durum === 'Aktif');
+    const enCokBrans = yoklamaEnCokKullanilanBrans(sporcular);
+    const branslar = [
+      ...new Set(sporcular.map(s => (s.sporBilgileri?.brans || '').trim()).filter(Boolean)),
+    ].sort((a, b) => a.localeCompare(b, 'tr'));
+    bransSel.innerHTML = '<option value="all">Tüm branşlar</option>';
+    for (const b of branslar) {
+      const opt = document.createElement('option');
+      opt.value = b;
+      opt.textContent = b;
+      bransSel.appendChild(opt);
+    }
+    if (branslar.some(x => x === prevB)) {
+      if (prevB === 'all' && enCokBrans && branslar.includes(enCokBrans)) {
+        bransSel.value = enCokBrans;
+      } else {
+        bransSel.value = prevB;
+      }
+    } else {
+      bransSel.value = enCokBrans && branslar.includes(enCokBrans) ? enCokBrans : 'all';
+    }
+  }
+  if (tffSel) {
+    const prevT = tffSel.value;
+    const tffList = yoklamaTffSecenekDegerleri();
+    tffSel.innerHTML = '<option value="all">Tüm TFF yaş grupları</option>';
+    for (const grup of tffList) {
+      const opt = document.createElement('option');
+      opt.value = grup;
+      opt.textContent = grup;
+      tffSel.appendChild(opt);
+    }
+    if (prevT === 'all' || tffList.includes(prevT)) {
+      tffSel.value = prevT;
+    } else {
+      tffSel.value = 'all';
+    }
+  }
+}
+
+/** Ayarlar/sporcu değişince seçenekleri tazele; mevcut seçimler mümkünse korunur */
+export function yoklamaFiltreleriniDoldur(): void {
+  yoklamaBransVeTffDoldur();
+  yoklamaAntrenmanGrubuSecenekleriniDoldur();
+}
+
+function yoklamaFiltreOzetiMetin(): string {
+  const { brans, tff, ag } = yoklamaFiltreDegerleri();
+  const parts: string[] = [];
+  if (brans && brans !== 'all') parts.push(brans);
+  if (tff && tff !== 'all') parts.push(tff);
+  if (ag && ag !== 'all') {
+    if (ag === YOKLAMA_AG_YOK) parts.push('Antrenman grubu yok');
+    else {
+      const g = Storage.antrenmanGrubuBul(ag);
+      parts.push(g ? g.ad : ag);
+    }
+  }
+  return parts.length ? parts.join(' · ') : 'Tüm liste';
+}
 
 // Import enhanced classes (opsiyonel - feature flags ile)
 let YoklamaStateClass: any = null;
@@ -36,7 +269,7 @@ const ENHANCED_FEATURES = {
   TOUCH_GESTURES: true, // Swipe gestures (mobil)
 };
 
-const API_ENABLED = Boolean((import.meta as any)?.env?.VITE_SOYBIS_API_BASE);
+const API_ENABLED = Boolean(import.meta.env.VITE_SOYBIS_API_BASE);
 
 interface DevamRaporuResult {
   yoklamaSayisi: number;
@@ -94,7 +327,7 @@ export function init(): void {
 
   filtreEventleri();
   butonEventleri();
-  yasGruplariniDoldur();
+  yoklamaFiltreleriniDoldur();
   raporButonEventleri();
 
   // Enhanced keyboard shortcuts
@@ -156,11 +389,22 @@ function initEnhancedFeatures(): void {
  * Filtre eventlerini bağla
  */
 function filtreEventleri(): void {
-  const grupSelect = Helpers.$('#yoklamaGrup') as HTMLSelectElement | null;
+  const bransSel = Helpers.$('#yoklamaBrans') as HTMLSelectElement | null;
+  const tffSel = Helpers.$('#yoklamaTffYas') as HTMLSelectElement | null;
+  const agSel = Helpers.$('#yoklamaAntrenmanGrubu') as HTMLSelectElement | null;
   const tarihInput = Helpers.$('#yoklamaTarih') as HTMLInputElement | null;
 
-  if (grupSelect) {
-    grupSelect.addEventListener('change', listeyiGuncelle);
+  if (bransSel) {
+    bransSel.addEventListener('change', () => {
+      yoklamaAntrenmanGrubuSecenekleriniDoldur();
+      listeyiGuncelle();
+    });
+  }
+  if (tffSel) {
+    tffSel.addEventListener('change', listeyiGuncelle);
+  }
+  if (agSel) {
+    agSel.addEventListener('change', listeyiGuncelle);
   }
 
   if (tarihInput) {
@@ -288,40 +532,18 @@ function raporButonEventleri(): void {
 }
 
 /**
- * Yaş gruplarını doldur
- */
-function yasGruplariniDoldur(): void {
-  const grupSelect = Helpers.$('#yoklamaGrup') as HTMLSelectElement | null;
-  if (!grupSelect) return;
-
-  grupSelect.innerHTML = '<option value="all">Tüm Gruplar</option>';
-  Helpers.YAS_GRUPLARI.forEach(grup => {
-    const option = document.createElement('option');
-    option.value = grup;
-    option.textContent = grup;
-    grupSelect.appendChild(option);
-  });
-
-  // Varsayılan değeri "Tüm Gruplar" (all) olarak ayarla
-  grupSelect.value = 'all';
-}
-
-/**
  * Yoklama durumunu kaydet (Enhanced version)
  * @param sporcuId - Sporcu ID
  * @param durum - Durum (var, yok, izinli, gec-geldi)
  */
 export function durumKaydet(sporcuId: number, durum: 'var' | 'yok' | 'izinli' | 'gec-geldi'): void {
   const tarihInput = Helpers.$('#yoklamaTarih') as HTMLInputElement | null;
-  const grupSelect = Helpers.$('#yoklamaGrup') as HTMLSelectElement | null;
+  if (!tarihInput) return;
 
-  if (!tarihInput || !grupSelect) return;
-
-  const tarih = tarihInput.value;
-  const grup = grupSelect.value;
+  const { tarih, brans, tff, ag, oturumAnahtari: grup } = yoklamaFiltreDegerleri();
 
   // Eski durumu al (history için)
-  const yoklama = Storage.yoklamaBul(tarih, grup);
+  const yoklama = yoklamaKaydiBul(tarih, brans, tff, ag);
   const kayit = yoklama?.sporcular.find(s => s.id === sporcuId);
   const eskiDurum = kayit?.durum || 'yok';
 
@@ -385,19 +607,11 @@ export function durumKaydet(sporcuId: number, durum: 'var' | 'yok' | 'izinli' | 
  */
 export function topluYoklama(durum: 'var' | 'yok'): void {
   const tarihInput = Helpers.$('#yoklamaTarih') as HTMLInputElement | null;
-  const grupSelect = Helpers.$('#yoklamaGrup') as HTMLSelectElement | null;
+  if (!tarihInput) return;
 
-  if (!tarihInput || !grupSelect) return;
+  const { tarih, brans, tff, ag, oturumAnahtari: grup } = yoklamaFiltreDegerleri();
 
-  const tarih = tarihInput.value;
-  const grup = grupSelect.value;
-
-  if (typeof window === 'undefined' || !window.Sporcu) {
-    Helpers.toast('Sporcu modülü yüklenemedi!', 'error');
-    return;
-  }
-
-  const sporcular = window.Sporcu?.yasGrubunaGore?.(grup) || [];
+  const sporcular = sporcularYoklamaFiltresindenGecir(brans, tff, ag);
 
   if (sporcular.length === 0) {
     Helpers.toast('Seçili grupta sporcu bulunamadı!', 'warning');
@@ -442,19 +656,10 @@ export function listeyiGuncelle(): void {
       return;
     }
 
-    const grupSelect = Helpers.$('#yoklamaGrup') as HTMLSelectElement | null;
-    const tarihInput = Helpers.$('#yoklamaTarih') as HTMLInputElement | null;
+    const { brans, tff, ag, tarih } = yoklamaFiltreDegerleri();
 
-    const grup = grupSelect?.value || 'all';
-    const tarih = tarihInput?.value || Helpers.bugunISO();
-
-    if (typeof window === 'undefined' || !window.Sporcu) {
-      Helpers.toast('Sporcu modülü yüklenemedi!', 'error');
-      return;
-    }
-
-    const sporcular = window.Sporcu?.yasGrubunaGore?.(grup) || [];
-    const yoklamaKaydi = Storage.yoklamaBul(tarih, grup);
+    const sporcular = sporcularYoklamaFiltresindenGecir(brans, tff, ag);
+    const yoklamaKaydi = yoklamaKaydiBul(tarih, brans, tff, ag);
 
     listContainer.innerHTML = '';
 
@@ -513,6 +718,15 @@ export function listeyiGuncelle(): void {
       const adSoyad = Helpers.escapeHtml(sporcu.temelBilgiler?.adSoyad || '-');
       const yasGrubu = Helpers.escapeHtml(sporcu.tffGruplari?.anaGrup || '-');
       const brans = Helpers.escapeHtml(sporcu.sporBilgileri?.brans || '-');
+      const agAd = sporcu.antrenmanGrubuId
+        ? (() => {
+            const g = Storage.antrenmanGrubuBul(sporcu.antrenmanGrubuId);
+            const ad = (g?.ad || '').trim();
+            if (g && ad) return Helpers.escapeHtml(ad);
+            if (g && !ad) return 'Antrenman adı boş';
+            return 'Tanımsız antrenman grubu';
+          })()
+        : 'Antrenman atanmadı';
 
       // UX-A2: Tek toggle butonu (VAR/YOK) - Mobil için optimize
       // UX-A3: Sporcu adları büyük harf ve kalın
@@ -524,7 +738,7 @@ export function listeyiGuncelle(): void {
       <div class="yoklama-info">
         <strong class="sporcu-adi">${adSoyad}</strong>
         ${riskBadge}
-        <span class="grup-badge">${yasGrubu} | ${brans}</span>
+        <span class="grup-badge" title="TFF yaş | Branş | Kulüp antrenman grubu">${yasGrubu} | ${brans} | ${agAd}</span>
         <span class="devam-durum ${durum === 'var' ? 'devam-var' : durum === 'yok' ? 'devam-yok' : 'devam-izin'}">
           ${durum.toUpperCase().replace('-', ' ')}
         </span>
@@ -678,15 +892,19 @@ export function sporcuDevamRaporu(sporcuId: number): SporcuDevamRaporuResult {
 
 /**
  * Filtreleri sıfırla (panel değiştiğinde kullanılır)
- * Grup seçimini "Tüm Gruplar" (all) olarak ayarlar
+ * Branş: veri yenilenince en çok kullanılan branş varsayılan; TFF/antrenman: tümü
  */
 export function filtreSifirla(): void {
-  const grupSelect = Helpers.$('#yoklamaGrup') as HTMLSelectElement | null;
+  const bransSel = Helpers.$('#yoklamaBrans') as HTMLSelectElement | null;
+  const tffSel = Helpers.$('#yoklamaTffYas') as HTMLSelectElement | null;
+  const agSel = Helpers.$('#yoklamaAntrenmanGrubu') as HTMLSelectElement | null;
   const tarihInput = Helpers.$('#yoklamaTarih') as HTMLInputElement | null;
 
-  if (grupSelect) {
-    grupSelect.value = 'all';
-  }
+  if (bransSel) bransSel.value = 'all';
+  if (tffSel) tffSel.value = 'all';
+  if (agSel) agSel.value = 'all';
+
+  yoklamaFiltreleriniDoldur();
 
   if (tarihInput) {
     tarihInput.value = Helpers.bugunISO();
@@ -742,6 +960,7 @@ function createSimpleState() {
       state.length = 0;
       hideAutoSaveIndicator();
       Helpers.toast(`✅ ${changeCount} değişiklik kaydedildi`, 'success');
+      listeyiGuncelle();
     },
   };
 }
@@ -867,6 +1086,8 @@ function updateSporcuUIOptimistic(sporcuId: number, durum: string): void {
   const item = document.querySelector(`[data-sporcu-id="${sporcuId}"]`);
   if (!item) return;
 
+  item.setAttribute('data-current-durum', durum);
+
   // Class'ları güncelle
   item.classList.remove('katildi', 'devamsiz', 'izinli', 'gec-geldi');
   const durumClass =
@@ -879,11 +1100,30 @@ function updateSporcuUIOptimistic(sporcuId: number, durum: string): void {
           : 'gec-geldi';
   item.classList.add(durumClass);
 
-  // Badge güncelle
+  // Badge güncelle (listeyiGuncelle ile aynı sınıf adları)
   const badge = item.querySelector('.devam-durum');
   if (badge) {
     badge.textContent = durum.toUpperCase().replace('-', ' ');
-    badge.className = `devam-durum devam-${durum}`;
+    badge.className = `devam-durum ${
+      durum === 'var' ? 'devam-var' : durum === 'yok' ? 'devam-yok' : 'devam-izin'
+    }`;
+  }
+
+  // Tek toggle butonu: VAR iken YOK, YOK iken VAR gösterilmeli (listeyiGuncelle ile uyumlu)
+  const toggleBtn = item.querySelector('.btn-toggle') as HTMLButtonElement | null;
+  if (toggleBtn) {
+    const yeniDurum: 'var' | 'yok' = durum === 'var' ? 'yok' : 'var';
+    const toggleText = durum === 'var' ? 'YOK' : 'VAR';
+    const toggleClass = durum === 'var' ? 'btn-danger' : 'btn-success';
+    toggleBtn.className = `btn btn-toggle ${toggleClass}`;
+    toggleBtn.textContent = toggleText;
+    toggleBtn.setAttribute('data-current', durum);
+    toggleBtn.onclick = () => {
+      (window as unknown as { Yoklama?: { durumKaydet: typeof durumKaydet } }).Yoklama?.durumKaydet(
+        sporcuId,
+        yeniDurum
+      );
+    };
   }
 
   // Animasyon
@@ -963,7 +1203,7 @@ function initKeyboardShortcuts(): void {
 
     // Yoklama view aktif mi?
     const yoklamaView = Helpers.$('#yoklama');
-    if (!yoklamaView || (yoklamaView as HTMLElement).style.display === 'none') return;
+    if (!yoklamaView || !yoklamaView.classList.contains('active')) return;
 
     // V: VAR
     if (e.key === 'v' || e.key === 'V') {
@@ -1138,7 +1378,7 @@ function devamsizlaraBildirimGonder(devamsizSporcular: Sporcu[], tarih: string):
     const tel = veliTel.replace(/\D/g, '');
     const whatsappTel = tel.startsWith('90') ? tel : '90' + tel;
 
-    const mesaj = `Sayın Veli,\n\n${sporcu.temelBilgiler?.adSoyad} bugünkü antrenmana katılmadı.\n\nTarih: ${new Date(tarih).toLocaleDateString('tr-TR')}\nGrup: ${sporcu.tffGruplari?.anaGrup}\n\nLütfen durum hakkında bilgi veriniz.\n\nSOY-BIS Spor Salonu`;
+    const mesaj = `Sayın Veli,\n\n${sporcu.temelBilgiler?.adSoyad} bugünkü antrenmana katılmadı.\n\nTarih: ${new Date(tarih).toLocaleDateString('tr-TR')}\nGrup: ${sporcu.tffGruplari?.anaGrup}\n\nLütfen durum hakkında bilgi veriniz.\n\nSOYBIS 360°`;
 
     const url = `https://wa.me/${whatsappTel}?text=${encodeURIComponent(mesaj)}`;
 
@@ -1428,24 +1668,14 @@ function processQRCheckIn(qrData: string): void {
     return;
   }
 
-  // 4. Tarih kontrolü (bugünün tarihi kullanılır - QR'daki tarih ignore edilir)
-  const bugun = new Date().toISOString().split('T')[0];
-  const kullanilacakTarih = bugun; // Her zaman bugün
-
-  // QR'da tarih varsa bile kullanılmaz - QR kalıcıdır, her gün aynı QR kullanılır
+  // 4–5. Formdaki tarih ve filtreler (QR kalıcı; kayıt bu oturuma yazılır)
+  const fv = yoklamaFiltreDegerleri();
   if (qrTarih) {
-    console.log(`ℹ️ [QR] QR'da tarih var (${qrTarih}) ama bugünün tarihi kullanılıyor: ${bugun}`);
+    console.log(`ℹ️ [QR] QR içi tarih (${qrTarih}), yoklama form tarihi: ${fv.tarih}`);
   }
 
-  // 5. Grup bilgisini al (UI'dan veya sporcudan)
-  const grupSelect = Helpers.$('#yoklamaGrup') as HTMLSelectElement | null;
-  const grup =
-    grupSelect?.value && grupSelect.value !== 'all'
-      ? grupSelect.value
-      : sporcu.tffGruplari?.anaGrup || 'U12';
-
   // 6. Duplicate kontrolü (aynı gün zaten VAR işaretlenmişse)
-  const mevcutYoklama = Storage.yoklamaBul(kullanilacakTarih, grup);
+  const mevcutYoklama = yoklamaKaydiBul(fv.tarih, fv.brans, fv.tff, fv.ag);
   const mevcutKayit = mevcutYoklama?.sporcular.find(s => s.id === sporcuId);
 
   if (mevcutKayit && mevcutKayit.durum === 'var') {
@@ -1482,7 +1712,7 @@ function processQRCheckIn(qrData: string): void {
     ✅ Hoş geldin!<br>
     <strong style="font-size: 20px; color: #38a169;">${sporcu.temelBilgiler?.adSoyad}</strong><br>
     <small style="color: #666;">
-      ${grup} | 🕐 ${gelişSaati}
+      ${Helpers.escapeHtml(yoklamaFiltreOzetiMetin())} | 🕐 ${gelişSaati}
       ${mevcutKayit ? '<br>⚠️ Güncellendi: ' + mevcutKayit.durum + ' → VAR' : ''}
     </small>
   `;
@@ -1691,44 +1921,21 @@ export function qrYazdirBaslat(): void {
   console.log('🖨️ [QR] QR Yazdırma başlatılıyor...');
 
   try {
-    const grupSelect = Helpers.$('#yoklamaGrup') as HTMLSelectElement | null;
-    const grup = grupSelect ? grupSelect.value : 'all';
+    const { brans, tff, ag } = yoklamaFiltreDegerleri();
+    const grupAdi = yoklamaFiltreOzetiMetin();
 
-    console.log('📋 [QR] Seçili grup:', grup);
+    console.log('📋 [QR] Yoklama filtresi:', grupAdi);
 
-    const allSporcular = Storage.sporculariGetir();
-    console.log('👥 [QR] Toplam sporcu sayısı:', allSporcular.length);
-
-    // Filtreleme: Tüm Gruplar (all) seçiliyse hepsini al, değilse sadece seçili grubu
-    const sporcular = allSporcular.filter((s: any) => {
-      // Pasif olmayanları dahil et (Aktif veya undefined)
-      const aktifMi = s.durum !== 'Pasif';
-
-      // Grup filtresi: all ise hepsini al
-      if (grup === 'all') {
-        return aktifMi;
-      }
-
-      // Belirli bir grup seçiliyse sadece o grubu al
-      const sporcuGrup = s.tffGruplari?.anaGrup || s.yasGrubu || s.grup;
-      const grupMatch = sporcuGrup === grup;
-      return grupMatch && aktifMi;
-    });
-
+    const sporcular = sporcularYoklamaFiltresindenGecir(brans, tff, ag);
     console.log('🎯 [QR] Filtrelenmiş sporcu sayısı:', sporcular.length);
 
     if (sporcular.length === 0) {
-      const mesaj =
-        grup === 'all'
-          ? '❌ Sistemde aktif sporcu bulunamadı!'
-          : '❌ Bu grupta aktif sporcu bulunamadı!';
-      Helpers.toast(mesaj, 'error');
+      Helpers.toast('❌ Seçili filtrelere uyan aktif sporcu bulunamadı!', 'error');
       console.warn('⚠️ [QR] Filtrelenmiş sporcu bulunamadı');
       return;
     }
 
     console.log('🖨️ [QR] QR kodları yazdırılıyor...');
-    const grupAdi = grup === 'all' ? 'Tüm Gruplar' : grup;
     yazdirQRKodlari(sporcular, grupAdi);
   } catch (error) {
     console.error('❌ [QR] QR yazdırma hatası:', error);
@@ -1936,6 +2143,7 @@ if (typeof window !== 'undefined') {
   (window as unknown as { Yoklama: Record<string, unknown> }).Yoklama = {
     init,
     listeyiGuncelle,
+    yoklamaFiltreleriniDoldur,
     durumKaydet,
     topluYoklama,
     devamRaporu,

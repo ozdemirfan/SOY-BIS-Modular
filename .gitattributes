@@ -1,0 +1,12 @@
+# Prettier (.prettierrc endOfLine: lf) ve .editorconfig ile uyumlu çalışma ağacı
+* text=auto eol=lf
+
+# İkili varlıklar
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary

@@ -15,9 +15,8 @@ const CURRENT_USER_KEY = 'soybis_aktifKullanici';
 const ACTIVE_VIEW_KEY = 'soybis_aktifView';
 
 function apiBaseUrl(): string {
-  // Vite build sırasında gömülür; production’da set edilmelidir.
-  // Set edilmezse /api (default) kabul ediyoruz.
-  const envBase = (import.meta as any)?.env?.VITE_SOYBIS_API_BASE;
+  // Vite build sırasında gömülür; set edilmezse /api. import.meta.env doğrudan kullanılmalı (Vite gömme).
+  const envBase = import.meta.env.VITE_SOYBIS_API_BASE;
   const base = typeof envBase === 'string' ? envBase : '';
   return base.trim().length > 0 ? base.trim() : '/api';
 }
@@ -54,6 +53,12 @@ async function parseJsonOrText(res: Response): Promise<any> {
   return res.text();
 }
 
+/** fetch seviyesinde kopma / DNS / CORS vb. — HTTP yanıtı yoktur */
+function logTransportFailure(path: string, error: unknown): void {
+  const detail = error instanceof Error ? error.message : String(error);
+  console.warn(`[SOY-BIS API] İstek başarısız (${path}):`, detail);
+}
+
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const url = withApiBase(path);
 
@@ -70,12 +75,30 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     body = JSON.stringify(body);
   }
 
-  const res = await fetch(url, {
-    ...init,
-    credentials: 'include',
-    headers,
-    body,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...init,
+      credentials: 'include',
+      headers,
+      body,
+    });
+  } catch (error) {
+    logTransportFailure(path, error);
+    throw new Error(
+      'Sunucuya bağlanılamadı. Ağ bağlantınızı veya API adresini (VITE_SOYBIS_API_BASE) kontrol edin.'
+    );
+  }
+
+  let payload: unknown;
+  try {
+    payload = await parseJsonOrText(res);
+  } catch (error) {
+    logTransportFailure(path, error);
+    throw new Error(
+      `Sunucu yanıtı okunamadı (${res.status}). ${res.statusText || 'Bilinmeyen durum'}`
+    );
+  }
 
   if (res.status === 401 || res.status === 403) {
     // Kullanıcı login değilse (sessionStorage yoksa) gereksiz reload döngüsünü engelle.
@@ -86,15 +109,22 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     if (hasClientSession) {
       clearSessionAndReload();
     }
-    throw new Error('Unauthorized');
+    const apiMsg =
+      typeof payload === 'object' && payload !== null
+        ? (payload as ApiErrorResponse).error || (payload as ApiErrorResponse).detail
+        : typeof payload === 'string'
+          ? payload
+          : '';
+    throw new Error((typeof apiMsg === 'string' ? apiMsg : '').trim() || 'Unauthorized');
   }
 
-  const payload = await parseJsonOrText(res);
   if (!res.ok) {
     const msg =
       typeof payload === 'object' && payload !== null
-        ? (payload as ApiErrorResponse).error || (payload as any).detail || 'API error'
-        : String(payload);
+        ? (payload as ApiErrorResponse).error ||
+          (payload as ApiErrorResponse).detail ||
+          `HTTP ${res.status}`
+        : String(payload || '').trim() || `HTTP ${res.status} ${res.statusText || ''}`.trim();
     throw new Error(msg);
   }
 

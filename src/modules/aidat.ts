@@ -5,6 +5,7 @@
 
 import * as Storage from '../utils/storage';
 import * as Helpers from '../utils/helpers';
+import { assertAidatDonemKpiSanity } from '../utils/aidatKpiSanity';
 import type { Aidat, Sporcu, Session } from '../types';
 
 // ========== INTERFACES & TYPES ==========
@@ -33,6 +34,25 @@ interface KalanBorcBilgisi {
   kalanBorc: number;
   donemAy: number;
   donemYil: number;
+}
+
+/**
+ * Tahsilat ve ödeme modalı önizlemesi için tek kaynak:
+ * `finansalHesapla` dönemde henüz borç satırı yoksa `toplamBorc=0` döner; o durumda
+ * beklenen tutar aylık ücrettir (liste filtresi ve `sporcuBorcHesapla` ile uyumlu).
+ * Eski hata: modalda yalnızca brüt borç kullanılıp `Math.min(aylikUcret, …)` ile kısılınca
+ * "0 TL, ödeme tamamlandı" gösteriliyordu.
+ */
+function donemBeklenenBorcVeKalan(
+  sporcu: Sporcu,
+  fin: Helpers.FinansalHesaplama
+): { beklenenBorcDonem: number; kalanBorc: number } {
+  const burslu = sporcu.odemeBilgileri?.burslu === true;
+  const aylikUcret = sporcu.odemeBilgileri?.aylikUcret || 0;
+  const brutBorcKayit = fin.toplamBorc;
+  const beklenenBorcDonem = burslu ? brutBorcKayit : brutBorcKayit > 0 ? brutBorcKayit : aylikUcret;
+  const kalanBorc = Math.max(0, beklenenBorcDonem - fin.toplamTahsilat);
+  return { beklenenBorcDonem, kalanBorc };
 }
 
 interface DonemRaporuResult {
@@ -157,11 +177,18 @@ let monthlyListState: MonthlyListState = {
   paid: {}, // { '1': { showAll: false, limit: 10 } }
 };
 
-// Hızlı filtre durumu
-let aktifFiltre: 'all' | 'paid' | 'debt' | 'upcoming' = 'all';
+// Hızlı filtre durumu (index.html ile uyumlu varsayılan: Ödemeyenler)
+let aktifFiltre: 'all' | 'paid' | 'debt' | 'upcoming' = 'debt';
 
 // View mode (table/card)
-let currentView: 'table' | 'card' = 'table';
+let currentView: 'table' | 'card' = 'card';
+
+let aidatResizeListenerEklendi = false;
+
+function aidatKartIzgarasiniTemizle(): void {
+  const g = Helpers.$('#aidatCardsGrid');
+  if (g) g.innerHTML = '';
+}
 
 // Sıralama durumu
 let sortState: {
@@ -171,9 +198,6 @@ let sortState: {
   column: null,
   direction: 'asc',
 };
-
-// Toplu seçim durumu
-let selectedSporcuIds: Set<number> = new Set();
 
 // Cache for sporcu registration dates (performance optimization)
 let sporcuKayitTarihleriCache: Map<number, Date | null> = new Map();
@@ -219,7 +243,6 @@ export function init(): void {
   viewToggleEventleri();
   gelismisFiltreEventleri();
   siralamaEventleri();
-  topluSecimEventleri();
 
   // Gelişmiş filtre seçeneklerini doldur
   gelismisFiltreSecenekleriniDoldur();
@@ -230,7 +253,21 @@ export function init(): void {
   if (calendarView) (calendarView as HTMLElement).style.display = 'block';
 
   takvimiOlustur();
-  listeyiGuncelle();
+  /* listeyiGuncelle viewGuncelle içinde çağrılır; panel görünürlüğü + kart senkronu tek yerden */
+  viewGuncelle(currentView);
+
+  if (!aidatResizeListenerEklendi) {
+    aidatResizeListenerEklendi = true;
+    let aidatResizeTimer: ReturnType<typeof setTimeout> | null = null;
+    window.addEventListener('resize', () => {
+      if (aidatResizeTimer) clearTimeout(aidatResizeTimer);
+      aidatResizeTimer = setTimeout(() => {
+        aidatViewPanelSenkron();
+      }, 150);
+    });
+  }
+
+  aidatHizliFiltreButonlariniAyarla(aktifFiltre);
 }
 
 /**
@@ -407,31 +444,50 @@ function viewToggleEventleri(): void {
       // Tıklanan butona active ekle
       target.classList.add('active');
 
-      // View'ı değiştir
-      currentView = view;
       viewGuncelle(view);
     });
   });
+}
+
+/** Tablo / kart sarmalayıcılarının görünürlüğü (mobilde data-aidat-view + CSS; masaüstünde inline) */
+function aidatViewPanelSenkron(): void {
+  const tableView = Helpers.$('#aidatTableView') as HTMLElement | null;
+  const cardView = Helpers.$('#aidatCardView') as HTMLElement | null;
+  const listCard = Helpers.$('#aidatListCard') as HTMLElement | null;
+  if (listCard) {
+    listCard.setAttribute('data-aidat-view', currentView);
+  }
+
+  const mobil =
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(max-width: 768px)').matches
+      : false;
+
+  if (mobil) {
+    /* Mobilde !important kuralları data-aidat-view ile; inline bırakılan display çakışmasın */
+    if (tableView) {
+      tableView.style.removeProperty('display');
+      tableView.style.removeProperty('visibility');
+    }
+    if (cardView) {
+      cardView.style.removeProperty('display');
+      cardView.style.removeProperty('visibility');
+    }
+  } else if (currentView === 'table') {
+    if (tableView) tableView.style.display = 'block';
+    if (cardView) cardView.style.display = 'none';
+  } else {
+    if (tableView) tableView.style.display = 'none';
+    if (cardView) cardView.style.display = 'block';
+  }
 }
 
 /**
  * View'ı güncelle (Table/Card)
  */
 function viewGuncelle(view: 'table' | 'card'): void {
-  const tableView = Helpers.$('#aidatTableView');
-  const cardView = Helpers.$('#aidatCardView');
-
-  if (view === 'table') {
-    if (tableView) (tableView as HTMLElement).style.display = 'block';
-    if (cardView) (cardView as HTMLElement).style.display = 'none';
-  } else {
-    if (tableView) (tableView as HTMLElement).style.display = 'none';
-    if (cardView) (cardView as HTMLElement).style.display = 'block';
-    // Kart görünümünü render et
-    kartGorusunuOlustur();
-  }
-
-  // Listeyi güncelle
+  currentView = view;
+  aidatViewPanelSenkron();
   listeyiGuncelle();
 }
 
@@ -571,102 +627,6 @@ function siralamaEventleri(): void {
   }
 
   // Tablo başlıklarındaki sıralama kaldırıldı - sadece sağ üstteki butonlar kullanılıyor
-}
-
-/**
- * Toplu seçim eventlerini bağla
- */
-function topluSecimEventleri(): void {
-  // Tümünü seç checkbox'ları
-  const selectAllCheckboxes = document.querySelectorAll('#aidatSelectAll, #aidatTableSelectAll');
-  selectAllCheckboxes.forEach(checkbox => {
-    checkbox.addEventListener('change', e => {
-      const checked = (e.target as HTMLInputElement).checked;
-      const checkboxes = document.querySelectorAll(
-        '.aidat-table tbody input[type="checkbox"][data-sporcu-id]'
-      );
-      checkboxes.forEach((cb: Element) => {
-        (cb as HTMLInputElement).checked = checked;
-        const sporcuId = parseInt((cb as HTMLInputElement).getAttribute('data-sporcu-id') || '0');
-        if (checked) {
-          selectedSporcuIds.add(sporcuId);
-        } else {
-          selectedSporcuIds.delete(sporcuId);
-        }
-      });
-      topluSecimGuncelle();
-    });
-  });
-
-  // Toplu işlem butonu
-  const bulkBtn = Helpers.$('#aidatBulkActions');
-  if (bulkBtn) {
-    bulkBtn.addEventListener('click', () => {
-      topluIslemModalAc();
-    });
-  }
-}
-
-/**
- * Toplu seçim durumunu güncelle
- */
-function topluSecimGuncelle(): void {
-  const count = selectedSporcuIds.size;
-  const bulkBtn = Helpers.$('#aidatBulkActions');
-  const countEl = Helpers.$('#aidatSelectedCount');
-
-  if (bulkBtn) {
-    (bulkBtn as HTMLElement).style.display = count > 0 ? 'inline-flex' : 'none';
-  }
-
-  if (countEl) {
-    countEl.textContent = count.toString();
-  }
-
-  // Tümünü seç checkbox'ını güncelle
-  const allCheckboxes = document.querySelectorAll('#aidatSelectAll, #aidatTableSelectAll');
-  const tbodyCheckboxes = document.querySelectorAll(
-    '.aidat-table tbody input[type="checkbox"][data-sporcu-id]'
-  );
-  const checkedCount = Array.from(tbodyCheckboxes).filter(
-    (cb: Element) => (cb as HTMLInputElement).checked
-  ).length;
-
-  allCheckboxes.forEach((cb: Element) => {
-    (cb as HTMLInputElement).checked =
-      checkedCount === tbodyCheckboxes.length && tbodyCheckboxes.length > 0;
-    (cb as HTMLInputElement).indeterminate =
-      checkedCount > 0 && checkedCount < tbodyCheckboxes.length;
-  });
-}
-
-/**
- * Toplu işlem modalını aç
- */
-function topluIslemModalAc(): void {
-  if (selectedSporcuIds.size === 0) {
-    Helpers.toast('Lütfen en az bir sporcu seçin', 'warning');
-    return;
-  }
-
-  // Basit bir onay dialogu (ileride modal olarak geliştirilebilir)
-  const action = confirm(
-    `${selectedSporcuIds.size} sporcu için toplu işlem yapmak istiyor musunuz?\n\nSeçenekler:\n- Toplu SMS Gönder\n- Toplu Ödeme Al (yakında)`
-  );
-
-  if (action) {
-    // Toplu SMS gönder
-    const sporcular = Storage.sporculariGetir().filter(s => s.id && selectedSporcuIds.has(s.id));
-
-    if (window.Notification && window.Notification.topluHatirlatmaGonder) {
-      window.Notification.topluHatirlatmaGonder(sporcular, 'sms');
-    }
-
-    // Seçimi temizle
-    selectedSporcuIds.clear();
-    topluSecimGuncelle();
-    listeyiGuncelle();
-  }
 }
 
 /**
@@ -1191,29 +1151,15 @@ function donemDegisti(): void {
 
   const aylikUcret = sporcu.odemeBilgileri?.aylikUcret || 0;
 
-  // Bu dönem için yapılan ödemeleri hesapla
   const aidatlar = Storage.aidatlariGetir();
-  const donemOdemeleri = aidatlar.filter(
-    a => a.sporcuId === sporcuId && a.donemAy === donemAy && a.donemYil === donemYil
-  );
-
-  // Helper fonksiyonu kullan
-  // Eski kayıtlar için uyumluluk: Helper fonksiyonu hem yeni hem eski kayıtları işler
   const finansalHesap = Helpers.finansalHesapla(aidatlar, sporcuId, donemAy, donemYil);
-  const toplamBorc = finansalHesap.toplamBorc;
+  const { beklenenBorcDonem, kalanBorc } = donemBeklenenBorcVeKalan(sporcu, finansalHesap);
   const toplamTahsilat = finansalHesap.toplamTahsilat;
 
-  // Kalan borç = Borç - Tahsilat (ama aylikUcret'ten küçük olmalı)
-  // Negatif bakiye kontrolü: Eğer tahsilat borçtan fazlaysa, fazla ödeme var
-  const hamKalanBorc = toplamBorc - toplamTahsilat;
-  const kalanBorc = Math.max(0, Math.min(aylikUcret, hamKalanBorc));
-
-  // Kalan borcu göster
-  // toplamOdenen yerine toplamTahsilat kullan
   kalanBorcBilgisiGoster({
     aylikUcret,
-    donemBorcu: toplamBorc,
-    toplamOdenen: toplamTahsilat, // Tahsilat miktarını göster
+    donemBorcu: beklenenBorcDonem,
+    toplamOdenen: toplamTahsilat,
     kalanBorc,
     donemAy,
     donemYil,
@@ -1550,13 +1496,9 @@ function odemeKaydet_fn(): void {
         a => a.sporcuId === sporcuId && a.donemAy === donemAy && a.donemYil === donemYil
       );
 
-      // Helper fonksiyonu kullan
       const finansalHesap = Helpers.finansalHesapla(aidatlar, sporcuId, donemAy, donemYil);
-      const toplamBorc = finansalHesap.toplamBorc;
       const toplamTahsilat = finansalHesap.toplamTahsilat;
-
-      // Kalan borç = Borç - Tahsilat (negatif olamaz)
-      const kalanBorc = Math.max(0, toplamBorc - toplamTahsilat);
+      const { beklenenBorcDonem, kalanBorc } = donemBeklenenBorcVeKalan(sporcu, finansalHesap);
 
       // Fazla ödeme yapılmaya çalışılıyorsa uyar (sadece tahsilat için)
       if (tutar > kalanBorc && kalanBorc > 0) {
@@ -1586,7 +1528,7 @@ function odemeKaydet_fn(): void {
         islem_turu: 'Tahsilat',
         aciklama: not || undefined, // Açıklama varsa ekle
         odemeDurumu:
-          toplamTahsilat + tutar >= toplamBorc
+          toplamTahsilat + tutar >= beklenenBorcDonem
             ? 'Ödendi'
             : toplamTahsilat + tutar > 0
               ? 'Kısmi'
@@ -1607,11 +1549,12 @@ function odemeKaydet_fn(): void {
 
       // Başarı mesajı ve fazla ödeme kontrolü
       const yeniTahsilat = toplamTahsilat + tutar;
-      const yeniKalanBorc = Math.max(0, toplamBorc - yeniTahsilat);
-      const yeniFazlaOdeme = Math.max(0, yeniTahsilat - toplamBorc);
+      const yeniKalanBorc = Math.max(0, beklenenBorcDonem - yeniTahsilat);
+      const yeniFazlaOdeme = Math.max(0, yeniTahsilat - beklenenBorcDonem);
 
       // Fazla ödeme varsa ve bu ay tam ödendiyse, fazla kısmı gelecek ayların aidatlarına dağıtarak kaydet
-      if (yeniFazlaOdeme > 0 && yeniKalanBorc <= 0) {
+      // (Yalnızca gerçekten beklenen tutar aşıldıysa; beklenenBorcDonem=0 iken dağıtma yapılmaz)
+      if (yeniFazlaOdeme > 0 && yeniKalanBorc <= 0 && beklenenBorcDonem > 0) {
         const fazlaOdemeSonuc = fazlaOdemeyiGelecekAylaraKaydet(
           sporcuId,
           yeniFazlaOdeme,
@@ -1878,6 +1821,24 @@ function gecmisModalKapat_fn(): void {
   }
 }
 
+/** Hızlı filtre butonlarındaki .active (listeyi tetiklemez) */
+function aidatHizliFiltreButonlariniAyarla(tip: 'all' | 'paid' | 'debt' | 'upcoming'): void {
+  const btnMap: Record<'all' | 'paid' | 'debt' | 'upcoming', string> = {
+    all: '#aidatFilterAll',
+    paid: '#aidatFilterPaid',
+    debt: '#aidatFilterDebt',
+    upcoming: '#aidatFilterUpcoming',
+  };
+  document.querySelectorAll('.aidat-filter-btn').forEach(btn => {
+    btn.classList.remove('active');
+  });
+  const sel = btnMap[tip];
+  if (sel) {
+    const activeBtn = Helpers.$(sel);
+    if (activeBtn) activeBtn.classList.add('active');
+  }
+}
+
 /**
  * Hızlı filtreleme
  * @param tip - 'all', 'paid', 'debt', 'upcoming'
@@ -1890,24 +1851,10 @@ export function hizliFiltrele(tip: 'all' | 'paid' | 'debt' | 'upcoming'): void {
 
   // Buton durumlarını güncelle - doğru class selector kullan
   document.querySelectorAll('.aidat-filter-btn').forEach(btn => {
-    btn.classList.remove('active');
     (btn as HTMLButtonElement).disabled = true; // Butonları geçici olarak devre dışı bırak
   });
 
-  const btnMap: { [key: string]: string } = {
-    all: '#aidatFilterAll',
-    paid: '#aidatFilterPaid',
-    debt: '#aidatFilterDebt',
-    upcoming: '#aidatFilterUpcoming',
-  };
-
-  const btnSelector = btnMap[tip];
-  if (btnSelector) {
-    const activeBtn = Helpers.$(btnSelector);
-    if (activeBtn) {
-      activeBtn.classList.add('active');
-    }
-  }
+  aidatHizliFiltreButonlariniAyarla(tip);
 
   // Listeyi güncelle - requestAnimationFrame ile smooth update
   requestAnimationFrame(() => {
@@ -1919,6 +1866,207 @@ export function hizliFiltrele(tip: 'all' | 'paid' | 'debt' | 'upcoming'): void {
       });
     });
   });
+}
+
+/** Liste / takvim: seçili ay veya bugünün dönemi (tek kaynak) */
+function aidatAktifDonemAyYil(): { buAy: number; buYil: number } {
+  const calendarView = Helpers.$('#aidatCalendar');
+  const isCalendarViewVisible =
+    calendarView && window.getComputedStyle(calendarView as HTMLElement).display !== 'none';
+  if (isCalendarViewVisible && calendarState) {
+    return { buAy: calendarState.currentMonth + 1, buYil: calendarState.currentYear };
+  }
+  const d = Helpers.suAnkiDonem();
+  return { buAy: d.ay, buYil: d.yil };
+}
+
+function aidatDonemTabloHesap(
+  sporcu: Sporcu,
+  aidatlar: Aidat[],
+  buAy: number,
+  buYil: number
+): {
+  buDonemOdemeler: Aidat[];
+  beklenenBorc: number;
+  borc: number;
+  toplamTahsilatBuSporcu: number;
+  donemAidatBorclari: number;
+  donemMalzemeBorclari: number;
+  toplamBorc: number;
+} | null {
+  if (sporcu.id == null) return null;
+  const burslu = sporcu.odemeBilgileri?.burslu || false;
+  const aylikUcret = sporcu.odemeBilgileri?.aylikUcret || 0;
+  const buDonemOdemeler = buDonemOdemeleriFiltrele(aidatlar, sporcu.id, buAy, buYil);
+
+  const donemAidatBorclari = buDonemOdemeler
+    .filter(a => (a.tutar || 0) > 0 && (a.islem_turu === 'Aidat' || !a.islem_turu))
+    .reduce((t, a) => t + (a.tutar || 0), 0);
+
+  const donemMalzemeBorclari = buDonemOdemeler
+    .filter(a => (a.tutar || 0) > 0 && a.islem_turu === 'Malzeme')
+    .reduce((t, a) => t + (a.tutar || 0), 0);
+
+  const toplamBorc = donemAidatBorclari + donemMalzemeBorclari;
+  const beklenenBorc = toplamBorc > 0 ? toplamBorc : aylikUcret;
+  const toplamTahsilatBuSporcu = tahsilatTutariHesapla(buDonemOdemeler);
+  const borc = burslu ? 0 : Math.max(0, beklenenBorc - toplamTahsilatBuSporcu);
+
+  return {
+    buDonemOdemeler,
+    beklenenBorc,
+    borc,
+    toplamTahsilatBuSporcu,
+    donemAidatBorclari,
+    donemMalzemeBorclari,
+    toplamBorc,
+  };
+}
+
+function aidatTabloOdendiMi(beklenenBorc: number, toplamTahsilatBuSporcu: number): boolean {
+  if (beklenenBorc > 0) {
+    return toplamTahsilatBuSporcu >= beklenenBorc;
+  }
+  return toplamTahsilatBuSporcu > 0;
+}
+
+function aidatKpiOzetHesapla(
+  kaynakSporcular: Sporcu[],
+  aidatlar: Aidat[],
+  listeAy: number,
+  listeYil: number
+): { beklenen: number; tahsilat: number; kalan: number } {
+  const gecerli = kaynakSporcular.filter(
+    (s): s is Sporcu & { id: number } => s != null && s.id != null && typeof s.id === 'number'
+  );
+  const satirlar = gecerli
+    .map(s => {
+      const burslu = s.odemeBilgileri?.burslu || false;
+      const kayitTarihi = sporcuKayitTarihiGetir(s);
+      if (kayitTarihi) {
+        const { kayitAy, kayitYil } = kayitTarihiBilgileriAl(kayitTarihi);
+        const donemAyFarki = donemAyFarkiHesapla(listeAy, listeYil, kayitAy, kayitYil);
+        if (donemAyFarki < 0) return null;
+      }
+      const h = aidatDonemTabloHesap(s, aidatlar, listeAy, listeYil);
+      if (!h) return null;
+      return {
+        burslu,
+        beklenenBorc: h.beklenenBorc,
+        toplamTahsilatBuSporcu: h.toplamTahsilatBuSporcu,
+        borc: h.borc,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null)
+    .filter(x => !x.burslu);
+
+  const kpi = {
+    beklenen: satirlar.reduce((t, x) => t + x.beklenenBorc, 0),
+    tahsilat: satirlar.reduce((t, x) => t + x.toplamTahsilatBuSporcu, 0),
+    kalan: satirlar.reduce((t, x) => t + x.borc, 0),
+  };
+  assertAidatDonemKpiSanity(kpi, 'aidatKpiOzetHesapla');
+  return kpi;
+}
+
+export function aidatDonemKpiOzet(
+  listeAy: number,
+  listeYil: number
+): { beklenen: number; tahsilat: number; kalan: number } {
+  const sporcular = Storage.sporculariGetir();
+  const aidatlar = Storage.aidatlariGetir();
+  const kaynak = sporcular.filter(s => s.durum === 'Aktif' && s.id != null);
+  return aidatKpiOzetHesapla(kaynak, aidatlar, listeAy, listeYil);
+}
+
+export function aidatGuncelDonemKpiOzet(): {
+  beklenen: number;
+  tahsilat: number;
+  kalan: number;
+} {
+  const { ay, yil } = Helpers.suAnkiDonem();
+  return aidatDonemKpiOzet(ay, yil);
+}
+
+/** Raporlar: Aidat ekranı / `aidatDonemKpiOzet` ile aynı dönem ve kurallar */
+export interface AidatDonemBorcluSatir {
+  sporcu: Sporcu;
+  borc: number;
+  beklenenBorc: number;
+  toplamTahsilatBuSporcu: number;
+}
+
+export function aidatDonemBorcluDetaylari(listeAy: number, listeYil: number): AidatDonemBorcluSatir[] {
+  const sporcular = Storage.sporculariGetir();
+  const aidatlar = Storage.aidatlariGetir();
+  const kaynak = sporcular.filter(s => s.durum === 'Aktif' && s.id != null);
+  const gecerli = kaynak.filter(
+    (s): s is Sporcu & { id: number } => s != null && s.id != null && typeof s.id === 'number'
+  );
+  const out: AidatDonemBorcluSatir[] = [];
+  for (const s of gecerli) {
+    const burslu = s.odemeBilgileri?.burslu || false;
+    if (burslu) continue;
+    const kayitTarihi = sporcuKayitTarihiGetir(s);
+    if (kayitTarihi) {
+      const { kayitAy, kayitYil } = kayitTarihiBilgileriAl(kayitTarihi);
+      if (donemAyFarkiHesapla(listeAy, listeYil, kayitAy, kayitYil) < 0) continue;
+    }
+    const h = aidatDonemTabloHesap(s, aidatlar, listeAy, listeYil);
+    if (!h) continue;
+    if (h.borc > 0) {
+      out.push({
+        sporcu: s,
+        borc: h.borc,
+        beklenenBorc: h.beklenenBorc,
+        toplamTahsilatBuSporcu: h.toplamTahsilatBuSporcu,
+      });
+    }
+  }
+  out.sort((a, b) => b.borc - a.borc);
+  return out;
+}
+
+/**
+ * Seçilen yıl için 12 ayın KPI toplamları; borçlu listesi — o yıl içinde en yüksek aylık kalan borcu.
+ */
+export function aidatYilOzetVeBorclular(yil: number): {
+  beklenen: number;
+  tahsilat: number;
+  kalan: number;
+  borclular: AidatDonemBorcluSatir[];
+} {
+  let beklenen = 0;
+  let tahsilat = 0;
+  let kalan = 0;
+  for (let m = 1; m <= 12; m++) {
+    const k = aidatDonemKpiOzet(m, yil);
+    beklenen += k.beklenen;
+    tahsilat += k.tahsilat;
+    kalan += k.kalan;
+  }
+  const byId = new Map<number, AidatDonemBorcluSatir>();
+  for (let m = 1; m <= 12; m++) {
+    for (const row of aidatDonemBorcluDetaylari(m, yil)) {
+      const id = row.sporcu.id!;
+      const prev = byId.get(id);
+      if (!prev || row.borc > prev.borc) {
+        byId.set(id, row);
+      }
+    }
+  }
+  const borclular = Array.from(byId.values()).sort((a, b) => b.borc - a.borc);
+  return { beklenen, tahsilat, kalan, borclular };
+}
+
+export function sporcuGuncelDonemAidatBorclu(sporcu: Sporcu): boolean {
+  if (sporcu.odemeBilgileri?.burslu) return false;
+  const aidatlar = Storage.aidatlariGetir();
+  // Takvimde gezinilen ay değil — sporcu/yoklama kartındaki nabız gerçek "bugünün dönemi" ile uyumlu olsun
+  const { ay, yil } = Helpers.suAnkiDonem();
+  const h = aidatDonemTabloHesap(sporcu, aidatlar, ay, yil);
+  if (!h) return false;
+  return h.borc > 0;
 }
 
 /**
@@ -1940,25 +2088,7 @@ export function listeyiGuncelle(): void {
   const aidatArama = Helpers.$('#aidatArama') as HTMLInputElement | null;
   const arama = (aidatArama?.value || '').toLowerCase();
 
-  // Takvim ayı/yılı kullan (eğer takvim görünümündeyse)
-  // Aksi halde mevcut ay/yılı kullan
-  let buAy: number;
-  let buYil: number;
-
-  // Takvim görünümündeyse takvim ayı/yılını kullan
-  const calendarView = Helpers.$('#aidatCalendar');
-  const isCalendarViewVisible =
-    calendarView && (calendarView as HTMLElement).style.display !== 'none';
-
-  if (isCalendarViewVisible && calendarState) {
-    buAy = calendarState.currentMonth + 1; // getMonth() 0-11 döndürür, biz 1-12 kullanıyoruz
-    buYil = calendarState.currentYear;
-  } else {
-    // Takvim görünümünde değilse mevcut ay/yılı kullan
-    const donem = Helpers.suAnkiDonem();
-    buAy = donem.ay;
-    buYil = donem.yil;
-  }
+  const { buAy, buYil } = aidatAktifDonemAyYil();
 
   // Aktif sporcuları filtrele - ID kontrolü ekle + Gelişmiş filtreler
   let filtrelenmis = sporcular.filter(s => {
@@ -1991,8 +2121,10 @@ export function listeyiGuncelle(): void {
   // requestAnimationFrame ile smooth update
   requestAnimationFrame(() => {
     tbody.innerHTML = '';
+    const kpiKaynak = filtrelenmis.slice();
 
     if (filtrelenmis.length === 0) {
+      aidatKartIzgarasiniTemizle();
       Helpers.showEmptyState(
         '#aidatEmptyState',
         'Henüz aidat kaydı bulunmuyor',
@@ -2026,12 +2158,8 @@ export function listeyiGuncelle(): void {
           }
         }
 
-        // Tüm dönemler için borç hesapla (geçmiş aylardan borçlu olabilir)
-        const finansalHesap = Helpers.finansalHesapla(aidatlar, s.id!, null, null);
-
-        const buSporcuBorc = finansalHesap.toplamBorc;
-        const buSporcuTahsilat = finansalHesap.toplamTahsilat;
-        const buSporcuKalanBorc = finansalHesap.kalanBorc;
+        const tabDonem = aidatDonemTabloHesap(s, aidatlar, buAy, buYil);
+        if (!tabDonem) return false;
 
         // Ödeme günü: Manuel ayarlanmışsa onu kullan, yoksa kayıt tarihindeki günü kullan
         let odemeGunu: number | null = null;
@@ -2047,15 +2175,11 @@ export function listeyiGuncelle(): void {
         if (aktifFiltre === 'upcoming' && odemeGunu === null) return false;
 
         if (aktifFiltre === 'paid') {
-          // Ödeyenler: Kalan borç yok (tahsilat >= borç)
-          return buSporcuKalanBorc <= 0 && buSporcuBorc > 0;
+          return aidatTabloOdendiMi(tabDonem.beklenenBorc, tabDonem.toplamTahsilatBuSporcu);
         } else if (aktifFiltre === 'debt') {
-          // Ödemeyenler: Kalan borç var
-          return buSporcuKalanBorc > 0;
+          return tabDonem.borc > 0;
         } else if (aktifFiltre === 'upcoming') {
-          // Yaklaşanlar: 5 gün içinde ödeme günü olan ve henüz ödememiş
-          // Önce ödemesini yapmamış olmalı (kalan borç > 0)
-          if (buSporcuKalanBorc <= 0) return false;
+          if (tabDonem.borc <= 0) return false;
 
           // Ödeme günü null ise atla
           if (odemeGunu === null) return false;
@@ -2104,8 +2228,12 @@ export function listeyiGuncelle(): void {
           message = 'Filtre kriterlerine uygun kayıt bulunamadı.';
           icon = 'fa-inbox';
         }
+        aidatKartIzgarasiniTemizle();
         Helpers.showEmptyState('#aidatEmptyState', title, message, { icon });
-        ozet(0, 0, 0);
+        {
+          const kpi = aidatKpiOzetHesapla(kpiKaynak, aidatlar, buAy, buYil);
+          ozet(kpi.beklenen, kpi.tahsilat, kpi.kalan);
+        }
         // Fade-in animasyonu için opacity'yi tekrar ayarla
         requestAnimationFrame(() => {
           (tbody as HTMLElement).style.opacity = '1';
@@ -2119,28 +2247,6 @@ export function listeyiGuncelle(): void {
       Helpers.hideSkeleton('.aidat-table-wrapper');
     }
 
-    // Alacakların Toplamı (Toplam Borçlar) - Gelecek aylar için oluşturulan borç kayıtları hariç
-    const aidatlarButun = Storage.aidatlariGetir();
-    const bugun = new Date();
-    const buAy = bugun.getMonth() + 1;
-    const buYil = bugun.getFullYear();
-    const toplamBorc = aidatlarButun
-      .filter(a => Helpers.gelecekAylarFiltresi(a, buAy, buYil))
-      .filter(
-        a =>
-          (a.tutar || 0) > 0 &&
-          (a.islem_turu === 'Aidat' || a.islem_turu === 'Malzeme' || !a.islem_turu)
-      )
-      .reduce((t, a) => t + (a.tutar || 0), 0);
-
-    // Toplam Tahsilat - Tüm zamanlar için toplam tahsilat
-    const toplamTahsilat = aidatlarButun
-      .filter(a => (a.tutar || 0) < 0 || a.islem_turu === 'Tahsilat')
-      .reduce((t, a) => t + Math.abs(a.tutar || 0), 0);
-
-    // Alacakların Toplamı = Toplam Borçlar
-    const alacaklarinToplami = toplamBorc;
-
     // Önce tüm sporcuların borç bilgilerini hesapla ve sıralama için hazırla
     // ID'si olmayan sporcuları filtrele (TypeScript type guard ile)
     const gecerliSporcular = filtrelenmis.filter(
@@ -2152,56 +2258,30 @@ export function listeyiGuncelle(): void {
         const burslu = s.odemeBilgileri?.burslu || false;
         const aylikUcret = s.odemeBilgileri?.aylikUcret || 0;
 
-        // Kayıt tarihinden önceki aylar için borç hesaplama yapma
         const kayitTarihi = sporcuKayitTarihiGetir(s);
-
         if (kayitTarihi) {
           const { kayitAy, kayitYil } = kayitTarihiBilgileriAl(kayitTarihi);
           const donemAyFarki = donemAyFarkiHesapla(buAy, buYil, kayitAy, kayitYil);
-
-          if (donemAyFarki < 0) {
-            return null;
-          }
+          if (donemAyFarki < 0) return null;
         }
 
-        // Bu dönem için ödemeleri bul - Helper fonksiyon kullan
-        const buDonemOdemeler = buDonemOdemeleriFiltrele(aidatlar, s.id!, buAy, buYil);
-
-        // Sadece Aidat borçları (malzeme hariç)
-        const donemAidatBorclari = buDonemOdemeler
-          .filter(a => (a.tutar || 0) > 0 && (a.islem_turu === 'Aidat' || !a.islem_turu))
-          .reduce((t, a) => t + (a.tutar || 0), 0);
-
-        const donemMalzemeBorclari = buDonemOdemeler
-          .filter(a => (a.tutar || 0) > 0 && a.islem_turu === 'Malzeme')
-          .reduce((t, a) => t + (a.tutar || 0), 0);
-
-        // Tahsilat hesaplama
-        const toplamTahsilatBuSporcu = tahsilatTutariHesapla(buDonemOdemeler);
-
-        // Beklenen borç: Aidat borç kaydı varsa onu kullan, yoksa aylikUcret
-        const beklenenBorc = donemAidatBorclari > 0 ? donemAidatBorclari : aylikUcret;
-
-        // Kalan borç: Beklenen borç - Tahsilat (sadece aidat için)
-        const borc = burslu ? 0 : Math.max(0, beklenenBorc - toplamTahsilatBuSporcu);
-
-        // Toplam borç (gösterim için): Aidat + Malzeme
-        const toplamBorc = donemAidatBorclari + donemMalzemeBorclari;
+        const h = aidatDonemTabloHesap(s, aidatlar, buAy, buYil);
+        if (!h) return null;
 
         return {
           sporcu: s,
           burslu,
           aylikUcret,
-          buDonemOdemeler,
-          donemAidatBorclari,
-          donemMalzemeBorclari,
-          beklenenBorc,
-          toplamBorc,
-          toplamTahsilatBuSporcu,
-          borc,
+          buDonemOdemeler: h.buDonemOdemeler,
+          donemAidatBorclari: h.donemAidatBorclari,
+          donemMalzemeBorclari: h.donemMalzemeBorclari,
+          beklenenBorc: h.beklenenBorc,
+          toplamBorc: h.toplamBorc,
+          toplamTahsilatBuSporcu: h.toplamTahsilatBuSporcu,
+          borc: h.borc,
         };
       })
-      .filter((item): item is NonNullable<typeof item> => item !== null); // null olanları filtrele
+      .filter((item): item is NonNullable<typeof item> => item !== null);
 
     // Sıralama: Önce gelişmiş sıralama, sonra varsayılan
     if (sortState.column) {
@@ -2267,17 +2347,26 @@ export function listeyiGuncelle(): void {
 
       // Eğer filtre sonucu boşsa, empty state göster
       if (filtered.length === 0) {
+        aidatKartIzgarasiniTemizle();
         Helpers.showEmptyState(
           '#aidatEmptyState',
           'Borç Aralığına Uygun Sporcu Bulunamadı',
           `Seçilen borç aralığında (${advancedFilters.borcAralik}) sporcu bulunmuyor.`,
           { icon: 'fa-filter' }
         );
-        ozet(0, 0, 0);
+        {
+          const kpi = aidatKpiOzetHesapla(kpiKaynak, aidatlar, buAy, buYil);
+          ozet(kpi.beklenen, kpi.tahsilat, kpi.kalan);
+        }
         return;
       }
 
       sporcularBorcBilgileri = filtered;
+    }
+
+    {
+      const kpi = aidatKpiOzetHesapla(kpiKaynak, aidatlar, buAy, buYil);
+      ozet(kpi.beklenen, kpi.tahsilat, kpi.kalan);
     }
 
     sporcularBorcBilgileri.forEach(
@@ -2394,13 +2483,7 @@ export function listeyiGuncelle(): void {
         // Birleştirilmiş sporcu meta bilgisi
         const sporcuMeta = `${brans} • ${yasGrubu}`;
 
-        const isSelected = selectedSporcuIds.has(sporcuId);
-        const checkedAttr = isSelected ? 'checked' : '';
-
         tr.innerHTML = `
-        <td class="checkbox-col">
-          <input type="checkbox" data-sporcu-id="${sporcuId}" ${checkedAttr}>
-        </td>
         <td class="sporcu-cell">
           <div class="sporcu-avatar ${avatarStatusClass}">${avatarInitials}</div>
           <div class="sporcu-info">
@@ -2442,22 +2525,6 @@ export function listeyiGuncelle(): void {
           </div>
         </td>
       `;
-
-        // Checkbox event listener ekle
-        const checkbox = tr.querySelector(
-          'input[type="checkbox"][data-sporcu-id]'
-        ) as HTMLInputElement | null;
-        if (checkbox) {
-          checkbox.addEventListener('change', e => {
-            const checked = (e.target as HTMLInputElement).checked;
-            if (checked) {
-              selectedSporcuIds.add(sporcuId);
-            } else {
-              selectedSporcuIds.delete(sporcuId);
-            }
-            topluSecimGuncelle();
-          });
-        }
 
         // Event listener'ları hem event delegation hem de direkt onclick ile ekliyoruz
         // butonEventleri() fonksiyonu tüm butonları yakalıyor
@@ -2521,17 +2588,9 @@ export function listeyiGuncelle(): void {
       (tbody as HTMLElement).style.transition = 'opacity 0.2s ease';
     });
 
-    // Kalan = Alacakların Toplamı - Toplam Tahsilat
-    const kalan = Math.max(0, alacaklarinToplami - toplamTahsilat);
-    ozet(alacaklarinToplami, toplamTahsilat, kalan);
-
-    // Toplu seçim durumunu güncelle
-    topluSecimGuncelle();
-
-    // Eğer kart görünümü aktifse, kartları da render et
-    if (currentView === 'card') {
-      kartGorusunuOlustur();
-    }
+    /* Kart ızgarası sporcu-listesi kartlarıyla aynı HTML; mobilde tek liste buradan.
+       Masaüstünde tablo+kart senkron kalsın diye her güncellemede doldurulur. */
+    kartGorusunuOlustur();
   });
 }
 
@@ -2566,44 +2625,51 @@ export function donemRaporu(ay: number, yil: number): DonemRaporuResult {
   const sporcular = Storage.sporculariGetir();
   const aidatlar = Storage.aidatlariGetir();
 
-  const aktifSporcular = sporcular.filter(s => s.durum === 'Aktif' && !s.odemeBilgileri?.burslu);
+  const kpi = aidatDonemKpiOzet(ay, yil);
 
-  const beklenen = aktifSporcular.reduce((t, s) => t + (s.odemeBilgileri?.aylikUcret || 0), 0);
-
-  const donemOdemeleri = aidatlar.filter(a => a.donemAy === ay && a.donemYil === yil);
-  const tahsilat = donemOdemeleri.reduce((t, a) => t + (a.tutar || 0), 0);
-
-  // Ödeme durumlarını hesapla
   let odeyenler = 0;
   let kismiOdeyenler = 0;
   let borcular = 0;
+  let toplamSporcu = 0;
 
-  aktifSporcular.forEach(s => {
-    const odenen = donemOdemeleri
-      .filter(a => a.sporcuId === s.id)
-      .reduce((t, a) => t + (a.tutar || 0), 0);
+  sporcular
+    .filter(
+      (s): s is Sporcu & { id: number } =>
+        s.durum === 'Aktif' && s.id != null && typeof s.id === 'number'
+    )
+    .forEach(s => {
+      if (s.odemeBilgileri?.burslu) return;
 
-    const aylikUcret = s.odemeBilgileri?.aylikUcret || 0;
+      const kayitTarihi = sporcuKayitTarihiGetir(s);
+      if (kayitTarihi) {
+        const { kayitAy, kayitYil } = kayitTarihiBilgileriAl(kayitTarihi);
+        if (donemAyFarkiHesapla(ay, yil, kayitAy, kayitYil) < 0) return;
+      }
 
-    if (odenen >= aylikUcret) {
-      odeyenler++;
-    } else if (odenen > 0) {
-      kismiOdeyenler++;
-    } else {
-      borcular++;
-    }
-  });
+      const h = aidatDonemTabloHesap(s, aidatlar, ay, yil);
+      if (!h) return;
+
+      toplamSporcu++;
+
+      if (aidatTabloOdendiMi(h.beklenenBorc, h.toplamTahsilatBuSporcu)) {
+        odeyenler++;
+      } else if (h.toplamTahsilatBuSporcu > 0) {
+        kismiOdeyenler++;
+      } else {
+        borcular++;
+      }
+    });
 
   return {
     donem: `${Helpers.ayAdi(ay)} ${yil}`,
-    beklenen,
-    tahsilat,
-    kalan: beklenen - tahsilat,
-    tahsilatOrani: Helpers.yuzdeHesapla(tahsilat, beklenen),
+    beklenen: kpi.beklenen,
+    tahsilat: kpi.tahsilat,
+    kalan: kpi.kalan,
+    tahsilatOrani: Helpers.yuzdeHesapla(kpi.tahsilat, kpi.beklenen),
     odeyenler,
     kismiOdeyenler,
     borcular,
-    toplamSporcu: aktifSporcular.length,
+    toplamSporcu,
   };
 }
 
@@ -4436,6 +4502,13 @@ export function topluSmsGonder(): void {
   }
 }
 
+/** Sporcu listesi ile aynı grup satırı (TFF yaş · branş · kulüp antrenman) */
+function sporcuAntrenmanEtiketiAdi(s: Sporcu): string {
+  const id = s.antrenmanGrubuId;
+  if (!id) return '';
+  return Storage.antrenmanGrubuBul(id)?.ad || '';
+}
+
 /**
  * Kart görünümünü oluştur
  */
@@ -4445,7 +4518,7 @@ function kartGorusunuOlustur(): void {
 
   const sporcular = Storage.sporculariGetir();
   const aidatlar = Storage.aidatlariGetir();
-  const { ay: buAy, yil: buYil } = Helpers.suAnkiDonem();
+  const { buAy, buYil } = aidatAktifDonemAyYil();
 
   const aidatArama = Helpers.$('#aidatArama') as HTMLInputElement | null;
   const arama = (aidatArama?.value || '').toLowerCase();
@@ -4477,36 +4550,33 @@ function kartGorusunuOlustur(): void {
       const aylikUcret = s.odemeBilgileri?.aylikUcret || 0;
       if (aylikUcret === 0) return false;
 
-      const buDonemOdemeler = aidatlar.filter(
-        a => a.sporcuId === s.id && a.donemAy === buAy && a.donemYil === buYil
-      );
+      const kayitTarihi = sporcuKayitTarihiGetir(s);
+      if (kayitTarihi) {
+        const { kayitAy, kayitYil } = kayitTarihiBilgileriAl(kayitTarihi);
+        const donemAyFarki = donemAyFarkiHesapla(buAy, buYil, kayitAy, kayitYil);
+        if (donemAyFarki < 0) return false;
+      }
 
-      const donemBorclari = buDonemOdemeler
-        .filter(
-          a =>
-            (a.tutar || 0) > 0 &&
-            (a.islem_turu === 'Aidat' || a.islem_turu === 'Malzeme' || !a.islem_turu)
-        )
-        .reduce((t, a) => t + (a.tutar || 0), 0);
+      const tabDonem = aidatDonemTabloHesap(s, aidatlar, buAy, buYil);
+      if (!tabDonem) return false;
 
-      const donemTahsilatlari = buDonemOdemeler
-        .filter(a => (a.tutar || 0) < 0 || a.islem_turu === 'Tahsilat')
-        .reduce((t, a) => t + Math.abs(a.tutar || 0), 0);
-
-      const borc = Math.max(0, donemBorclari - donemTahsilatlari);
+      let odemeGunu: number | null = null;
+      if (s.odemeBilgileri?.odemeGunu) {
+        odemeGunu = s.odemeBilgileri.odemeGunu;
+      } else if (s.kayitTarihi) {
+        const kt = new Date(s.kayitTarihi);
+        if (!isNaN(kt.getTime())) odemeGunu = kt.getDate();
+      }
+      if (aktifFiltre === 'upcoming' && odemeGunu === null) return false;
 
       if (aktifFiltre === 'paid') {
-        return borc <= 0 && donemBorclari > 0;
-      } else if (aktifFiltre === 'debt') {
-        return borc > 0;
-      } else if (aktifFiltre === 'upcoming') {
-        if (borc <= 0) return false;
-        let odemeGunu: number | null = null;
-        if (s.odemeBilgileri?.odemeGunu) {
-          odemeGunu = s.odemeBilgileri.odemeGunu;
-        } else if (s.kayitTarihi) {
-          odemeGunu = new Date(s.kayitTarihi).getDate();
-        }
+        return aidatTabloOdendiMi(tabDonem.beklenenBorc, tabDonem.toplamTahsilatBuSporcu);
+      }
+      if (aktifFiltre === 'debt') {
+        return tabDonem.borc > 0;
+      }
+      if (aktifFiltre === 'upcoming') {
+        if (tabDonem.borc <= 0) return false;
         if (odemeGunu === null) return false;
         const bugunAy = bugun.getMonth();
         const bugunYil = bugun.getFullYear();
@@ -4534,35 +4604,18 @@ function kartGorusunuOlustur(): void {
   const sporcularBorcBilgileri = gecerliSporcular.map(s => {
     const burslu = s.odemeBilgileri?.burslu || false;
     const aylikUcret = s.odemeBilgileri?.aylikUcret || 0;
-    const buDonemOdemeler = aidatlar.filter(
-      a => a.sporcuId === s.id && a.donemAy === buAy && a.donemYil === buYil
-    );
-
-    const donemBorclari = buDonemOdemeler
-      .filter(
-        a =>
-          (a.tutar || 0) > 0 &&
-          (a.islem_turu === 'Aidat' || a.islem_turu === 'Malzeme' || !a.islem_turu)
-      )
-      .reduce((t, a) => t + (a.tutar || 0), 0);
-
-    const donemTahsilatlari = buDonemOdemeler
-      .filter(a => (a.tutar || 0) < 0 || a.islem_turu === 'Tahsilat')
-      .reduce((t, a) => t + Math.abs(a.tutar || 0), 0);
-
-    const eskiNegatifTahsilat = buDonemOdemeler
-      .filter(a => !a.islem_turu && (a.tutar || 0) < 0)
-      .reduce((t, a) => t + Math.abs(a.tutar || 0), 0);
-
-    const toplamBorc = donemBorclari;
-    const toplamTahsilatBuSporcu = donemTahsilatlari + eskiNegatifTahsilat;
-    const borc = burslu ? 0 : Math.max(0, toplamBorc - toplamTahsilatBuSporcu);
+    const h = aidatDonemTabloHesap(s, aidatlar, buAy, buYil);
+    const toplamBorc = h?.toplamBorc ?? 0;
+    const beklenenBorc = h?.beklenenBorc ?? 0;
+    const toplamTahsilatBuSporcu = h?.toplamTahsilatBuSporcu ?? 0;
+    const borc = burslu ? 0 : (h?.borc ?? 0);
 
     return {
       sporcu: s,
       burslu,
       aylikUcret,
       toplamBorc,
+      beklenenBorc,
       toplamTahsilatBuSporcu,
       borc,
     };
@@ -4593,89 +4646,64 @@ function kartGorusunuOlustur(): void {
     });
   }
 
-  // Kartları render et
+  // Kartları render et — sporcu listesi modülü ile aynı kart yapısı (sporcu-item)
   cardsGrid.innerHTML = sporcularBorcBilgileri
-    .map(({ sporcu: s, burslu, aylikUcret, toplamBorc, toplamTahsilatBuSporcu, borc }) => {
+    .map(({ sporcu: s, burslu, aylikUcret, toplamBorc, beklenenBorc, toplamTahsilatBuSporcu, borc }) => {
       const sporcuId = s.id!;
-      const isSelected = selectedSporcuIds.has(sporcuId);
       const adSoyad = Helpers.escapeHtml(s.temelBilgiler?.adSoyad || '-');
       const brans = Helpers.escapeHtml(s.sporBilgileri?.brans || '-');
       const yasGrubu = Helpers.escapeHtml(s.tffGruplari?.anaGrup || '-');
+      const agRaw = sporcuAntrenmanEtiketiAdi(s);
+      const antrenmanEtiket = agRaw ? Helpers.escapeHtml(agRaw) : 'Antrenman yok';
 
-      // Durum badge ve kart class'ı
-      let durumBadge = '';
-      let cardStatusClass = '';
+      let durumText = '';
+      let devamClass = '';
+      let borderClass: 'aktif' | 'pasif' | 'aidat-partial' = 'aktif';
+
       if (burslu) {
-        durumBadge =
-          '<span class="aidat-card-status" style="background: rgba(0, 217, 119, 0.15); color: #00d977;">BURSLU</span>';
-        cardStatusClass = 'aidat-card-paid'; // Burslu = ödendi gibi
-      } else if (borc <= 0 && toplamBorc > 0) {
-        durumBadge =
-          '<span class="aidat-card-status" style="background: rgba(0, 217, 119, 0.15); color: #00d977;">ÖDENDİ</span>';
-        cardStatusClass = 'aidat-card-paid'; // Açık yeşil
+        durumText = 'BURSLU';
+        devamClass = 'devam-var';
+        borderClass = 'aktif';
+      } else if (borc <= 0 && beklenenBorc > 0) {
+        durumText = 'ÖDENDİ';
+        devamClass = 'devam-var';
+        borderClass = 'aktif';
       } else if (toplamTahsilatBuSporcu > 0 && borc > 0) {
-        durumBadge =
-          '<span class="aidat-card-status" style="background: rgba(255, 176, 32, 0.15); color: #ffb020;">KISMI</span>';
-        cardStatusClass = 'aidat-card-partial'; // Açık sarı
+        durumText = 'KISMI';
+        devamClass = 'aidat-durum-kismi';
+        borderClass = 'aidat-partial';
       } else {
-        durumBadge =
-          '<span class="aidat-card-status" style="background: rgba(255, 71, 87, 0.15); color: #ff4757;">BORÇLU</span>';
-        cardStatusClass = 'aidat-card-debt'; // Açık kırmızı
+        durumText = 'BORÇLU';
+        devamClass = 'devam-yok';
+        borderClass = 'pasif';
       }
 
-      // Progress bar
-      const progressYuzde =
-        toplamBorc > 0
-          ? Math.min(100, Math.round((toplamTahsilatBuSporcu / toplamBorc) * 100))
-          : 100;
+      const debtPulse = !burslu && borc > 0 ? ' sporcu-item-debt-pulse' : '';
+      const itemClass = `sporcu-item ${borderClass}${debtPulse}`.trim();
+
+      const finansOzeti = burslu
+        ? 'Burslu · Borç yok'
+        : `${Helpers.paraFormat(aylikUcret)} TL · ${borc > 0 ? 'Kalan ' + Helpers.paraFormat(borc) + ' TL' : 'Borç yok'}`;
 
       return `
-      <div class="aidat-card ${cardStatusClass} ${isSelected ? 'selected' : ''}" data-sporcu-id="${sporcuId}">
-        <div class="aidat-card-header">
-          <div class="aidat-card-checkbox">
-            <input type="checkbox" data-sporcu-id="${sporcuId}" ${isSelected ? 'checked' : ''}>
-          </div>
-          <h3 class="aidat-card-title">${adSoyad}</h3>
-          ${durumBadge}
+      <div class="${itemClass}" data-sporcu-id="${sporcuId}">
+        <div class="sporcu-info">
+          <strong class="sporcu-adi">${adSoyad}</strong>
+          <span class="grup-badge" title="TFF yaş grubu · Branş · Kulüp antrenman grubu">${yasGrubu} · ${brans} · ${antrenmanEtiket}</span>
+          <span class="aidat-kart-finans">${finansOzeti}</span>
+          <span class="devam-durum ${devamClass}">${durumText}</span>
         </div>
-        <div class="aidat-card-body">
-          <div class="aidat-card-info">
-            <span class="aidat-card-info-label">Branş:</span>
-            <span class="aidat-card-info-value">${brans}</span>
-          </div>
-          <div class="aidat-card-info">
-            <span class="aidat-card-info-label">Yaş Grubu:</span>
-            <span class="aidat-card-info-value">${yasGrubu}</span>
-          </div>
-          <div class="aidat-card-info">
-            <span class="aidat-card-info-label">Aylık Ücret:</span>
-            <span class="aidat-card-info-value">${burslu ? '0 TL' : Helpers.paraFormat(aylikUcret) + ' TL'}</span>
-          </div>
-          <div class="aidat-card-info">
-            <span class="aidat-card-info-label">Kalan Borç:</span>
-            <span class="aidat-card-info-value" style="color: ${borc > 0 ? '#ff4757' : '#00d977'};">${borc > 0 ? Helpers.paraFormat(borc) + ' TL' : 'Yok'}</span>
-          </div>
-          <div class="aidat-card-progress">
-            <div class="aidat-card-progress-bar">
-              <div class="aidat-card-progress-fill" style="width: ${progressYuzde}%;"></div>
-            </div>
-            <div class="aidat-card-info" style="margin-top: 0.25rem;">
-              <span class="aidat-card-info-label">Ödeme Durumu:</span>
-              <span class="aidat-card-info-value">%${progressYuzde}</span>
-            </div>
-          </div>
-        </div>
-        <div class="aidat-card-footer">
+        <div class="sporcu-buttons">
           ${
             !burslu && sporcuId
               ? `
-            <button type="button" class="btn btn-small btn-success odeme-al-btn" data-sporcu-id="${sporcuId}" title="Ödeme Al">
+            <button type="button" class="btn btn-small btn-icon btn-success odeme-al-btn" data-sporcu-id="${sporcuId}" title="Ödeme Al">
               <i class="fa-solid fa-credit-card"></i>
             </button>
             ${
               borc > 0
                 ? `
-              <button type="button" class="btn btn-small btn-warning sms-gonder-btn" data-sporcu-id="${sporcuId}" title="SMS Gönder">
+              <button type="button" class="btn btn-small btn-icon btn-warning sms-gonder-btn" data-sporcu-id="${sporcuId}" title="SMS Gönder">
                 <i class="fa-solid fa-sms"></i>
               </button>
             `
@@ -4687,7 +4715,7 @@ function kartGorusunuOlustur(): void {
           ${
             sporcuId
               ? `
-            <button type="button" class="btn btn-small gecmis-btn" data-sporcu-id="${sporcuId}" title="Geçmiş">
+            <button type="button" class="btn btn-small btn-icon btn-info gecmis-btn" data-sporcu-id="${sporcuId}" title="Geçmiş">
               <i class="fa-solid fa-history"></i>
             </button>
           `
@@ -4698,44 +4726,15 @@ function kartGorusunuOlustur(): void {
     `;
     })
     .join('');
-
-  // Checkbox event listener'larını ekle
-  cardsGrid.querySelectorAll('input[type="checkbox"][data-sporcu-id]').forEach(checkbox => {
-    checkbox.addEventListener('change', e => {
-      const target = e.target as HTMLInputElement;
-      const sporcuId = parseInt(target.getAttribute('data-sporcu-id') || '0');
-      if (target.checked) {
-        selectedSporcuIds.add(sporcuId);
-      } else {
-        selectedSporcuIds.delete(sporcuId);
-      }
-      topluSecimGuncelle();
-
-      // Kart seçim durumunu güncelle
-      const card = target.closest('.aidat-card') as HTMLElement;
-      if (card) {
-        card.classList.toggle('selected', target.checked);
-      }
-    });
-  });
 }
 
 /**
- * Filtre durumunu sıfırla (panel değiştiğinde)
+ * Modülden çıkıldığında: takvimi bugüne yaklaştır, varsayılan hızlı filtreyi Ödemeyenler yap.
+ * (Her view değişiminde çağrılmamalı — appViewNavigation yalnızca aidat → başka view.)
  */
 export function filtreSifirla(): void {
-  aktifFiltre = 'all';
-
-  // Tüm filtre butonlarını pasif yap
-  document.querySelectorAll('.aidat-filter-btn').forEach(btn => {
-    btn.classList.remove('active');
-  });
-
-  // "Tümü" butonunu aktif yap
-  const allBtn = Helpers.$('#aidatFilterAll');
-  if (allBtn) {
-    allBtn.classList.add('active');
-  }
+  aktifFiltre = 'debt';
+  aidatHizliFiltreButonlariniAyarla('debt');
 
   // Takvim ayı/yılını mevcut ay/yıla sıfırla
   const now = new Date();
