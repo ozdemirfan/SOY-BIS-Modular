@@ -86,7 +86,7 @@ export function paraFormat(sayi: number | string | null | undefined, kisaFormat 
 }
 
 /**
- * SOYBIS logosu (`public/logo.png` → `/logo.png`).
+ * Uygulama logosu (`public/logo.png` → `/logo.png`).
  * PDF/html2canvas için tam URL; aynı kökende CORS sorunu olmaz.
  */
 export function soybisLogoUrl(): string {
@@ -668,6 +668,33 @@ export function slugify(str: string): string {
     console.error('slugify hatası:', error);
     return '';
   }
+}
+
+/**
+ * Ad Soyad metnini Türkçe kurallara göre baş harfleri büyük olacak şekilde normalize eder.
+ * Örnek: "aHMET yILMAZ" -> "Ahmet Yılmaz", "ali-veli o'brien" -> "Ali-Veli O'Brien"
+ */
+export function adSoyadFormatla(text: string | null | undefined): string {
+  if (!text) return '';
+
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+
+  const capitalizeToken = (token: string): string => {
+    const lower = token.toLocaleLowerCase('tr-TR');
+    const first = lower.charAt(0).toLocaleUpperCase('tr-TR');
+    return first + lower.slice(1);
+  };
+
+  return normalized
+    .split(' ')
+    .map(word =>
+      word
+        .split(/([-'’])/)
+        .map(part => (/^[-'’]$/.test(part) ? part : capitalizeToken(part)))
+        .join('')
+    )
+    .join(' ');
 }
 
 /**
@@ -1498,7 +1525,13 @@ export function gelecekAylarFiltresi(
 }
 
 /**
- * Sporcu için finansal hesaplama yapar
+ * Sporcu için finansal hesaplama yapar (satır bazlı, dönemAy/Yıl eşleşmesi).
+ *
+ * Aidat ekranı / dashboard üst KPI ile birebir aynı değildir: liste görünümü
+ * `buDonemOdemeleriFiltrele` ile tarih ve ödeme tarihini de döneme bağlar;
+ * burada yalnızca `donemAy`/`donemYil` alanları filtrelenir. Dashboard ve
+ * “Alacakların toplamı” için `aidatDonemKpiOzet` / `aidatGuncelDonemKpiOzet` kullanın.
+ *
  * @param aidatlar - Tüm aidat kayıtları
  * @param sporcuId - Sporcu ID
  * @param donemAy - Dönem ayı (opsiyonel, tüm dönemler için null)

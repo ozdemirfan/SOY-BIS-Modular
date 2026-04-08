@@ -3,9 +3,9 @@
  * LocalStorage yönetimi, yedekleme ve geri yükleme - TypeScript Version
  */
 
-import type { Sporcu, Aidat, Yoklama, Gider, Antrenor, User, Ayarlar } from '../types';
+import type { Sporcu, Aidat, Yoklama, Gider, Antrenor, User, Ayarlar, AntrenmanGrubu } from '../types';
 import { STORAGE_KEYS } from '../types';
-import { toast, bugunISO, suAnkiDonem, ayAdi } from './helpers';
+import { toast, bugunISO, suAnkiDonem, ayAdi, adSoyadFormatla } from './helpers';
 import { TC_GECICI_YER_TUTUCU } from './validation';
 import { apiDelete, apiGet, apiPost } from '../services/apiClient';
 
@@ -35,6 +35,7 @@ interface BackupData {
     yoklamalar: Yoklama[];
     giderler: Gider[];
     antrenorler: Antrenor[];
+    antrenmanGruplari?: AntrenmanGrubu[];
   };
 }
 
@@ -78,6 +79,29 @@ function generateDbSafeId(existingIds: number[]): number {
   }
 
   throw new Error('Uygun ID üretilemedi, lütfen tekrar deneyin.');
+}
+
+function normalizeAdSoyadFields<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map(item => normalizeAdSoyadFields(item)) as unknown as T;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  const src = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+
+  Object.entries(src).forEach(([key, fieldValue]) => {
+    if (key === 'adSoyad' && typeof fieldValue === 'string') {
+      out[key] = adSoyadFormatla(fieldValue);
+      return;
+    }
+    out[key] = normalizeAdSoyadFields(fieldValue);
+  });
+
+  return out as T;
 }
 
 /**
@@ -250,6 +274,107 @@ export function sil(key: string): boolean {
   }
 }
 
+// ========== ANTRENMAN GRUPLARI (merkezi liste) ==========
+
+export function antrenmanGruplariGetir(): AntrenmanGrubu[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.ANTRENMAN_GRUPLARI);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const list: AntrenmanGrubu[] = [];
+    for (const item of parsed) {
+      if (!item || typeof item !== 'object') continue;
+      const o = item as Record<string, unknown>;
+      const id = typeof o.id === 'string' ? o.id.trim() : '';
+      if (!id) continue;
+      const ad = typeof o.ad === 'string' ? o.ad : String(o.ad ?? '');
+      const bransRaw = o.brans;
+      const brans =
+        typeof bransRaw === 'string' && bransRaw.trim() ? bransRaw.trim() : undefined;
+      list.push(brans ? { id, ad, brans } : { id, ad });
+    }
+    return list;
+  } catch {
+    return [];
+  }
+}
+
+export function antrenmanGruplariKaydet(gruplar: AntrenmanGrubu[]): void {
+  kaydet(STORAGE_KEYS.ANTRENMAN_GRUPLARI, gruplar);
+}
+
+export function antrenmanGrubuBul(id: string | undefined | null): AntrenmanGrubu | null {
+  if (!id) return null;
+  return antrenmanGruplariGetir().find(g => g.id === id) || null;
+}
+
+/**
+ * Aynı ad + aynı branşta grup varsa onu döndürür; yoksa yeni ekler.
+ * @param brans - Boş bırakılırsa eski davranış (branşsız grup); yeni UI her zaman branş gönderir.
+ */
+export function antrenmanGrubuEkle(ad: string, brans?: string): AntrenmanGrubu | null {
+  const trimmed = ad.trim();
+  if (!trimmed) return null;
+  const bransNorm = (brans || '').trim();
+  const gruplar = antrenmanGruplariGetir();
+  const mevcut = gruplar.find(
+    g =>
+      g.ad.toLowerCase() === trimmed.toLowerCase() &&
+      (g.brans || '').trim().toLowerCase() === bransNorm.toLowerCase()
+  );
+  if (mevcut) return mevcut;
+  const yeni: AntrenmanGrubu = {
+    id: `ag_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+    ad: trimmed,
+    ...(bransNorm ? { brans: bransNorm } : {}),
+  };
+  gruplar.push(yeni);
+  antrenmanGruplariKaydet(gruplar);
+  return yeni;
+}
+
+/**
+ * Grubu siler; o gruba atanmış sporcuların atamasını kaldırır.
+ */
+export function antrenmanGrubuSil(id: string): void {
+  const gruplar = antrenmanGruplariGetir().filter(g => g.id !== id);
+  antrenmanGruplariKaydet(gruplar);
+  const sporcular = oku<Sporcu[]>(STORAGE_KEYS.SPORCULAR, []);
+  let degisti = false;
+  for (const s of sporcular) {
+    if (s.antrenmanGrubuId === id) {
+      s.antrenmanGrubuId = undefined;
+      degisti = true;
+    }
+  }
+  if (degisti) {
+    kaydet(STORAGE_KEYS.SPORCULAR, sporcular);
+    sporcuCacheTemizle();
+  }
+}
+
+/** Eski `tffGruplari.kucukGrup` → merkezi grup + temiz tffGruplari */
+function sporcuLegacyKucukGrupMigrate(s: Sporcu): Sporcu {
+  const legacy = (s.tffGruplari as { kucukGrup?: string } | undefined)?.kucukGrup?.trim();
+  const tff = s.tffGruplari ? { ...s.tffGruplari } : {};
+  delete (tff as { kucukGrup?: string }).kucukGrup;
+
+  let antrenmanGrubuId = s.antrenmanGrubuId;
+  if (!antrenmanGrubuId && legacy) {
+    const sporcuBrans = (s.sporBilgileri?.brans || '').trim();
+    const mevcut = antrenmanGruplariGetir().find(
+      g =>
+        g.ad.toLowerCase() === legacy.toLowerCase() &&
+        (g.brans || '').trim().toLowerCase() === sporcuBrans.toLowerCase()
+    );
+    const yeni = mevcut || antrenmanGrubuEkle(legacy, sporcuBrans || undefined);
+    if (yeni) antrenmanGrubuId = yeni.id;
+  }
+
+  return { ...s, tffGruplari: tff, antrenmanGrubuId };
+}
+
 // ========== SPORCU İŞLEMLERİ ==========
 
 /**
@@ -266,14 +391,30 @@ export function sporculariGetir(): Sporcu[] {
       const sessionData = sessionStorage.getItem(STORAGE_KEYS.SPORCULAR);
       if (sessionData && sessionData.trim() !== '[]' && sessionData.trim() !== '') {
         localStorage.setItem(STORAGE_KEYS.SPORCULAR, sessionData);
-        return oku<Sporcu[]>(STORAGE_KEYS.SPORCULAR, []);
+        const base = normalizeAdSoyadFields(oku<Sporcu[]>(STORAGE_KEYS.SPORCULAR, []));
+        return finalizeSporcularList(base);
       }
     } catch (e) {
       // sessionStorage erişim hatası - sessizce devam et
     }
   }
 
-  return oku<Sporcu[]>(STORAGE_KEYS.SPORCULAR, []);
+  const base = normalizeAdSoyadFields(oku<Sporcu[]>(STORAGE_KEYS.SPORCULAR, []));
+  return finalizeSporcularList(base);
+}
+
+function finalizeSporcularList(rawList: Sporcu[]): Sporcu[] {
+  let anyLegacy = false;
+  const list = rawList.map(s => {
+    if ((s.tffGruplari as { kucukGrup?: string } | undefined)?.kucukGrup) {
+      anyLegacy = true;
+    }
+    return sporcuLegacyKucukGrupMigrate(s);
+  });
+  if (anyLegacy) {
+    kaydet(STORAGE_KEYS.SPORCULAR, list);
+  }
+  return list;
 }
 
 /**
@@ -289,25 +430,26 @@ export function sporcuCacheTemizle(): void {
  */
 export function sporcuKaydet(sporcu: Partial<Sporcu> & { id?: number }): Sporcu {
   const sporcular = sporculariGetir();
+  const normalizedSporcu = normalizeAdSoyadFields(sporcu);
 
-  if (sporcu.id) {
+  if (normalizedSporcu.id) {
     // Güncelleme
-    const index = sporcular.findIndex(s => s.id === sporcu.id);
+    const index = sporcular.findIndex(s => s.id === normalizedSporcu.id);
     if (index > -1) {
-      const merged = { ...sporcular[index], ...sporcu } as Record<string, unknown>;
+      const merged = { ...sporcular[index], ...normalizedSporcu } as Record<string, unknown>;
       if (
-        sporcu.silinmeBilgisi === undefined &&
-        Object.prototype.hasOwnProperty.call(sporcu, 'silinmeBilgisi')
+        normalizedSporcu.silinmeBilgisi === undefined &&
+        Object.prototype.hasOwnProperty.call(normalizedSporcu, 'silinmeBilgisi')
       ) {
         delete merged.silinmeBilgisi;
       }
       if (
-        sporcu.yenidenKatilmaTarihi === undefined &&
-        Object.prototype.hasOwnProperty.call(sporcu, 'yenidenKatilmaTarihi')
+        normalizedSporcu.yenidenKatilmaTarihi === undefined &&
+        Object.prototype.hasOwnProperty.call(normalizedSporcu, 'yenidenKatilmaTarihi')
       ) {
         delete merged.yenidenKatilmaTarihi;
       }
-      sporcular[index] = merged as unknown as Sporcu;
+      sporcular[index] = sporcuLegacyKucukGrupMigrate(merged as unknown as Sporcu);
       kaydet(STORAGE_KEYS.SPORCULAR, sporcular);
       sporcuCacheTemizle();
       const updated = sporcular[index] as Sporcu;
@@ -328,41 +470,42 @@ export function sporcuKaydet(sporcu: Partial<Sporcu> & { id?: number }): Sporcu 
     // Önce spread yap, sonra ID'yi override et (spread ile ID undefined olabilir)
     const yeniSporcu: Sporcu = {
       durum: 'Aktif',
-      temelBilgiler: sporcu.temelBilgiler || { adSoyad: '' },
-      sporBilgileri: sporcu.sporBilgileri || {},
-      iletisim: sporcu.iletisim || {},
-      veliBilgileri: sporcu.veliBilgileri || {
+      temelBilgiler: normalizedSporcu.temelBilgiler || { adSoyad: '' },
+      sporBilgileri: normalizedSporcu.sporBilgileri || {},
+      iletisim: normalizedSporcu.iletisim || {},
+      veliBilgileri: normalizedSporcu.veliBilgileri || {
         veli1: {},
         veli2: {},
       },
       odemeBilgileri:
-        sporcu.odemeBilgileri ||
+        normalizedSporcu.odemeBilgileri ||
         ({
           aylikUcret: 0,
           burslu: false,
           odemeGunu: null,
         } as Sporcu['odemeBilgileri']),
-      ekUcretler: sporcu.ekUcretler || {
+      ekUcretler: normalizedSporcu.ekUcretler || {
         esofman: { tutar: 0, odendi: false },
         forma: { tutar: 0, odendi: false },
         yagmurluk: { tutar: 0, odendi: false },
         diger: { tutar: 0, odendi: false },
       },
-      kayitOdemeDurumu: sporcu.kayitOdemeDurumu || 'alinmadi',
-      fiziksel: sporcu.fiziksel || {},
-      saglik: sporcu.saglik || {},
-      tffGruplari: sporcu.tffGruplari || {},
-      belgeler: sporcu.belgeler || {},
+      kayitOdemeDurumu: normalizedSporcu.kayitOdemeDurumu || 'alinmadi',
+      fiziksel: normalizedSporcu.fiziksel || {},
+      saglik: normalizedSporcu.saglik || {},
+      tffGruplari: normalizedSporcu.tffGruplari || {},
+      belgeler: normalizedSporcu.belgeler || {},
       kayitTarihi: kayitTarihi, // Kayıt tarihi set ediliyor
-      ...sporcu, // Spread önce (kayitTarihi override edilebilir)
+      ...normalizedSporcu, // Spread önce (kayitTarihi override edilebilir)
       id: yeniId, // ID sonra (kesinlikle set edilsin)
     };
-    sporcular.push(yeniSporcu);
+    const yeniSporcuTemiz = sporcuLegacyKucukGrupMigrate(yeniSporcu);
+    sporcular.push(yeniSporcuTemiz);
 
     // ID kontrolü - eğer yeniSporcu.id hala undefined veya yeniId ile eşleşmiyorsa düzelt
-    if (!yeniSporcu.id || yeniSporcu.id !== yeniId) {
-      yeniSporcu.id = yeniId;
-      sporcular[sporcular.length - 1] = yeniSporcu;
+    if (!yeniSporcuTemiz.id || yeniSporcuTemiz.id !== yeniId) {
+      yeniSporcuTemiz.id = yeniId;
+      sporcular[sporcular.length - 1] = yeniSporcuTemiz;
     }
 
     // LocalStorage'a kaydet
@@ -370,17 +513,17 @@ export function sporcuKaydet(sporcu: Partial<Sporcu> & { id?: number }): Sporcu 
     sporcuCacheTemizle();
 
     if (API_ENABLED) {
-      void apiPost('/sporcular', yeniSporcu).catch(err =>
+      void apiPost('/sporcular', yeniSporcuTemiz).catch(err =>
         notifyApiSyncFailure('Sporcu ekleme', err)
       );
     }
 
-    return yeniSporcu;
+    return yeniSporcuTemiz;
   }
 
   // Güncelleme durumunda localStorage'a kaydet
   kaydet(STORAGE_KEYS.SPORCULAR, sporcular);
-  const updated = sporcular.find(s => s.id === sporcu.id) as Sporcu;
+  const updated = sporcular.find(s => s.id === normalizedSporcu.id) as Sporcu;
   if (API_ENABLED) {
     void apiPost('/sporcular', updated).catch(err =>
       notifyApiSyncFailure('Sporcu güncelleme', err)
@@ -889,7 +1032,7 @@ export function donemGiderleri(ay: number, yil: number): Gider[] {
  * Tüm antrenörleri getir
  */
 export function antrenorleriGetir(): Antrenor[] {
-  return oku<Antrenor[]>(STORAGE_KEYS.ANTRENORLER, []);
+  return normalizeAdSoyadFields(oku<Antrenor[]>(STORAGE_KEYS.ANTRENORLER, []));
 }
 
 /**
@@ -897,12 +1040,13 @@ export function antrenorleriGetir(): Antrenor[] {
  */
 export function antrenorKaydet(antrenor: Partial<Antrenor> & { id?: number }): Antrenor {
   const antrenorler = antrenorleriGetir();
+  const normalizedAntrenor = normalizeAdSoyadFields(antrenor);
 
-  if (antrenor.id) {
+  if (normalizedAntrenor.id) {
     // Güncelleme
-    const index = antrenorler.findIndex(a => a.id === antrenor.id);
+    const index = antrenorler.findIndex(a => a.id === normalizedAntrenor.id);
     if (index > -1) {
-      antrenorler[index] = { ...antrenorler[index], ...antrenor } as Antrenor;
+      antrenorler[index] = { ...antrenorler[index], ...normalizedAntrenor } as Antrenor;
     }
   } else {
     // Yeni kayıt
@@ -910,8 +1054,8 @@ export function antrenorKaydet(antrenor: Partial<Antrenor> & { id?: number }): A
       id: Date.now() + Math.floor(Math.random() * 1000), // ID çakışma riskini azalt
       kayitTarihi: new Date().toISOString(),
       durum: 'Aktif',
-      adSoyad: antrenor.adSoyad || '',
-      ...antrenor,
+      adSoyad: normalizedAntrenor.adSoyad || '',
+      ...normalizedAntrenor,
     };
     antrenorler.push(yeniAntrenor);
     kaydet(STORAGE_KEYS.ANTRENORLER, antrenorler);
@@ -926,7 +1070,7 @@ export function antrenorKaydet(antrenor: Partial<Antrenor> & { id?: number }): A
   }
 
   kaydet(STORAGE_KEYS.ANTRENORLER, antrenorler);
-  const updated = antrenorler.find(a => a.id === antrenor.id) as Antrenor;
+  const updated = antrenorler.find(a => a.id === normalizedAntrenor.id) as Antrenor;
   if (API_ENABLED) {
     void apiPost('/antrenorler', updated).catch(err =>
       notifyApiSyncFailure('Antrenör güncelleme', err)
@@ -969,6 +1113,7 @@ export function yedekOlustur(): BackupData {
       yoklamalar: yoklamalariGetir(),
       giderler: giderleriGetir(),
       antrenorler: antrenorleriGetir(),
+      antrenmanGruplari: antrenmanGruplariGetir(),
     },
   };
 
@@ -987,7 +1132,7 @@ export function yedekIndir(): void {
 
   const link = document.createElement('a');
   link.href = url;
-  link.download = `SOYBIS_Yedek_${new Date().toLocaleDateString('tr-TR').replace(/\./g, '-')}.json`;
+      link.download = `SOYBIS360_Yedek_${new Date().toLocaleDateString('tr-TR').replace(/\./g, '-')}.json`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -1005,13 +1150,16 @@ export function yedekYukle(yedek: BackupData): boolean {
       throw new Error('Geçersiz yedek dosyası');
     }
 
-    const { sporcular, aidatlar, yoklamalar, giderler, antrenorler } = yedek.veriler;
+    const { sporcular, aidatlar, yoklamalar, giderler, antrenorler, antrenmanGruplari } = yedek.veriler;
 
     if (sporcular) kaydet(STORAGE_KEYS.SPORCULAR, sporcular);
     if (aidatlar) kaydet(STORAGE_KEYS.AIDATLAR, aidatlar);
     if (yoklamalar) kaydet(STORAGE_KEYS.YOKLAMALAR, yoklamalar);
     if (giderler) kaydet(STORAGE_KEYS.GIDERLER, giderler);
     if (antrenorler) kaydet(STORAGE_KEYS.ANTRENORLER, antrenorler);
+    if (antrenmanGruplari && antrenmanGruplari.length >= 0) {
+      kaydet(STORAGE_KEYS.ANTRENMAN_GRUPLARI, antrenmanGruplari);
+    }
 
     // API modunda backend'i de aynı yedek ile güncelliyoruz.
     if (API_ENABLED) {
@@ -1062,7 +1210,7 @@ export function dosyadanYukle(file: File): Promise<BackupData> {
  * Tüm kullanıcıları getir
  */
 export function kullanicilariGetir(): User[] {
-  return oku<User[]>(STORAGE_KEYS.KULLANICILAR, []);
+  return normalizeAdSoyadFields(oku<User[]>(STORAGE_KEYS.KULLANICILAR, []));
 }
 
 /**
@@ -1072,24 +1220,25 @@ export async function kullaniciKaydet(
   kullanici: UserWithPassword & { id?: number }
 ): Promise<User> {
   const kullanicilar = kullanicilariGetir();
+  const normalizedKullanici = normalizeAdSoyadFields(kullanici);
 
   // Şifreyi hash'le
-  if (kullanici.sifre && !kullanici.sifre.startsWith('$')) {
-    kullanici.sifreHash = await sifreHash(kullanici.sifre);
-    delete kullanici.sifre; // Düz metin şifreyi sil
+  if (normalizedKullanici.sifre && !normalizedKullanici.sifre.startsWith('$')) {
+    normalizedKullanici.sifreHash = await sifreHash(normalizedKullanici.sifre);
+    delete normalizedKullanici.sifre; // Düz metin şifreyi sil
   }
 
-  if (kullanici.id) {
+  if (normalizedKullanici.id) {
     // Güncelleme
-    const index = kullanicilar.findIndex(k => k.id === kullanici.id);
+    const index = kullanicilar.findIndex(k => k.id === normalizedKullanici.id);
     if (index > -1) {
       const mevcutKullanici = kullanicilar[index];
       if (mevcutKullanici) {
         // Şifre değiştirilmediyse eski hash'i koru
-        if (!kullanici.sifreHash) {
-          kullanici.sifreHash = mevcutKullanici.sifreHash;
+        if (!normalizedKullanici.sifreHash) {
+          normalizedKullanici.sifreHash = mevcutKullanici.sifreHash;
         }
-        kullanicilar[index] = { ...mevcutKullanici, ...kullanici } as User;
+        kullanicilar[index] = { ...mevcutKullanici, ...normalizedKullanici } as User;
       }
     }
   } else {
@@ -1097,12 +1246,12 @@ export async function kullaniciKaydet(
     const yeniKullanici: User = {
       id: Date.now() + Math.floor(Math.random() * 1000), // ID çakışma riskini azalt
       olusturmaTarihi: new Date().toISOString(),
-      kullaniciAdi: kullanici.kullaniciAdi || '',
-      adSoyad: kullanici.adSoyad || '',
-      rol: kullanici.rol || 'Antrenör',
-      aktif: kullanici.aktif !== undefined ? kullanici.aktif : true,
-      ...kullanici,
-      sifreHash: kullanici.sifreHash,
+      kullaniciAdi: normalizedKullanici.kullaniciAdi || '',
+      adSoyad: normalizedKullanici.adSoyad || '',
+      rol: normalizedKullanici.rol || 'Antrenör',
+      aktif: normalizedKullanici.aktif !== undefined ? normalizedKullanici.aktif : true,
+      ...normalizedKullanici,
+      sifreHash: normalizedKullanici.sifreHash,
     } as User;
     kullanicilar.push(yeniKullanici);
     kaydet(STORAGE_KEYS.KULLANICILAR, kullanicilar);
@@ -1115,7 +1264,7 @@ export async function kullaniciKaydet(
   }
 
   kaydet(STORAGE_KEYS.KULLANICILAR, kullanicilar);
-  const updated = kullanicilar.find(k => k.id === kullanici.id) as User;
+  const updated = kullanicilar.find(k => k.id === normalizedKullanici.id) as User;
   if (API_ENABLED) {
     void apiPost('/kullanicilar', updated).catch(err =>
       notifyApiSyncFailure('Kullanıcı güncelleme', err)
@@ -1323,6 +1472,42 @@ export function veriMigration(): void {
 }
 
 /**
+ * Sunucu oturumu doğrulandıktan sonra uygulama verisi localStorage anahtarlarını siler.
+ * Ardından apiCacheWarmup ile sunucudan doldurulmalıdır.
+ */
+function clearServerSyncedLocalCache(): void {
+  if (typeof window === 'undefined') return;
+  const keys: string[] = [
+    STORAGE_KEYS.SPORCULAR,
+    STORAGE_KEYS.AIDATLAR,
+    STORAGE_KEYS.YOKLAMALAR,
+    STORAGE_KEYS.GIDERLER,
+    STORAGE_KEYS.ANTRENORLER,
+    STORAGE_KEYS.AYARLAR,
+    STORAGE_KEYS.KULLANICILAR,
+    STORAGE_KEYS.BASLANGIC_BAKIYESI,
+    STORAGE_KEYS.ANTRENMAN_GRUPLARI,
+  ];
+  keys.forEach(k => {
+    try {
+      localStorage.removeItem(k);
+    } catch {
+      // ignore
+    }
+  });
+}
+
+/**
+ * Oturum açıkken yerel uygulama önbelleğini sunucu verisiyle değiştirir (önce temizler, sonra warmup).
+ * @returns Warmup tamamen başarılıysa true
+ */
+export async function syncLocalCacheFromServerAfterAuth(): Promise<boolean> {
+  if (!API_ENABLED) return true;
+  clearServerSyncedLocalCache();
+  return apiCacheWarmup();
+}
+
+/**
  * Sistem başlatma - Varsayılan admin oluştur
  */
 export async function sistemBaslat(): Promise<void> {
@@ -1337,7 +1522,13 @@ export async function sistemBaslat(): Promise<void> {
   // Sayfa yenilemede cookie ile login zaten açıksa cache'i doldur.
   try {
     await apiGet('/auth/me');
-    await apiCacheWarmup();
+    const warmed = await syncLocalCacheFromServerAfterAuth();
+    if (!warmed) {
+      toast(
+        'Sunucu verisi yüklenemedi; liste boş görünebilir. Bağlantıyı kontrol edip sayfayı yenileyin.',
+        'warning'
+      );
+    }
   } catch {
     // Login yoksa cache warmup atlanır.
   }
@@ -1347,11 +1538,33 @@ export async function sistemBaslat(): Promise<void> {
  * Backend'den tüm verileri alıp localStorage'a cache olarak basar.
  * Not: Bu fonksiyon sync Storage API'lerini (mevcut kodu) değiştirmemek için kullanılır.
  */
-export async function apiCacheWarmup(): Promise<void> {
-  if (!API_ENABLED) return;
-  if (typeof window === 'undefined') return;
+export async function apiCacheWarmup(): Promise<boolean> {
+  if (!API_ENABLED) return true;
+  if (typeof window === 'undefined') return true;
 
   try {
+    const safeWriteArrayCache = <T>(key: string, remoteData: T[]): void => {
+      // Ağ/senkron kopmalarında backend geçici olarak boş dönebilir.
+      // Bu durumda local'de veri varken boş liste ile üstüne yazmayız.
+      try {
+        const localRaw = localStorage.getItem(key);
+        const localParsed = localRaw ? (JSON.parse(localRaw) as unknown) : null;
+        const localArray = Array.isArray(localParsed) ? (localParsed as T[]) : [];
+        const remoteArray = Array.isArray(remoteData) ? remoteData : [];
+
+        if (remoteArray.length === 0 && localArray.length > 0) {
+          console.warn(
+            `[SOY-BIS API] Warmup sırasında ${key} için boş uzak veri geldi; local cache korunuyor.`
+          );
+          return;
+        }
+
+        localStorage.setItem(key, JSON.stringify(remoteArray));
+      } catch {
+        localStorage.setItem(key, JSON.stringify(Array.isArray(remoteData) ? remoteData : []));
+      }
+    };
+
     // SessionStorage rol bilgisi ile admin endpoint'lerini koşullu çekiyoruz.
     // Böylece Antrenör/Muhasebe girişlerinde /kullanicilar endpoint 403 verip tüm warmup bozulmuyor.
     let rol: string | null = null;
@@ -1385,20 +1598,22 @@ export async function apiCacheWarmup(): Promise<void> {
       }
     }
 
-    // Cache'i direkt localStorage'a yazıyoruz (kaydet/kayıt fonksiyonları API'ye yazmasın diye).
-    localStorage.setItem(STORAGE_KEYS.SPORCULAR, JSON.stringify(sporcular));
-    localStorage.setItem(STORAGE_KEYS.AIDATLAR, JSON.stringify(aidatlar));
-    localStorage.setItem(STORAGE_KEYS.YOKLAMALAR, JSON.stringify(yoklamalar));
-    localStorage.setItem(STORAGE_KEYS.GIDERLER, JSON.stringify(giderler));
-    localStorage.setItem(STORAGE_KEYS.ANTRENORLER, JSON.stringify(antrenorler));
-    localStorage.setItem(STORAGE_KEYS.KULLANICILAR, JSON.stringify(kullanicilar));
+    // Cache'i localStorage'a yazarken "boş liste ile ezme" koruması uygula.
+    safeWriteArrayCache(STORAGE_KEYS.SPORCULAR, sporcular);
+    safeWriteArrayCache(STORAGE_KEYS.AIDATLAR, aidatlar);
+    safeWriteArrayCache(STORAGE_KEYS.YOKLAMALAR, yoklamalar);
+    safeWriteArrayCache(STORAGE_KEYS.GIDERLER, giderler);
+    safeWriteArrayCache(STORAGE_KEYS.ANTRENORLER, antrenorler);
+    safeWriteArrayCache(STORAGE_KEYS.KULLANICILAR, kullanicilar);
     localStorage.setItem(STORAGE_KEYS.AYARLAR, JSON.stringify(ayarlar ?? {}));
     localStorage.setItem(
       STORAGE_KEYS.BASLANGIC_BAKIYESI,
       JSON.stringify(baslangicBakiyesi ?? { nakit: 0, banka: 0, tarih: bugunISO() })
     );
+    return true;
   } catch (error) {
     console.warn('API cache warmup hatası:', error);
+    return false;
   }
 }
 
@@ -1436,6 +1651,11 @@ if (typeof window !== 'undefined') {
     antrenorKaydet,
     antrenorSil,
     antrenorBul,
+    antrenmanGruplariGetir,
+    antrenmanGruplariKaydet,
+    antrenmanGrubuEkle,
+    antrenmanGrubuSil,
+    antrenmanGrubuBul,
     yedekOlustur,
     yedekIndir,
     yedekYukle,

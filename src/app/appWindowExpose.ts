@@ -64,6 +64,9 @@ export function attachModulesToWindow(app: object): void {
     smsGonderTekil: Aidat.smsGonderTekil,
     topluSmsGonder: Aidat.topluSmsGonder,
     gunDetaylariKapat: Aidat.gunDetaylariKapat,
+    /** Konsol: Aidat.donemKpiOzet(4,2026) — dashboard ile aynı KPI motoru */
+    donemKpiOzet: Aidat.aidatDonemKpiOzet,
+    guncelDonemKpiOzet: Aidat.aidatGuncelDonemKpiOzet,
   };
 
   w.Yoklama = Yoklama;

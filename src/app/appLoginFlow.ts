@@ -9,6 +9,7 @@ import { klavyeKisayollari } from './appKeyboardShortcuts';
 import { hamburgerMenuEventleri } from './appMobileNav';
 import { temaYonetiminiBaslat } from './appTheme';
 import { masaustuSidebarYonetimi } from './appDesktopSidebar';
+import { bindViewportResizeHandler } from '../utils/responsiveLayout';
 
 /** app.ts içindeki navigasyon / view / state ile köprü — döngüsel import önlenir */
 export interface LoginFlowHooks {
@@ -74,7 +75,7 @@ export function loginEventleri(hooks: LoginFlowHooks): void {
 
     const appContainer0 = Helpers.$('.app-container');
     if (appContainer0) {
-      (appContainer0 as HTMLElement).style.display = 'none';
+      appContainer0.classList.add('app-container--prelogin');
     }
 
     hooks.kullaniciBilgileriniGoster();
@@ -123,16 +124,23 @@ export function loginEventleri(hooks: LoginFlowHooks): void {
       setTimeout(() => {
         const appContainer = Helpers.$('.app-container');
         if (appContainer) {
-          (appContainer as HTMLElement).style.display = 'flex';
+          appContainer.classList.remove('app-container--prelogin');
 
           setTimeout(() => {
             temaYonetiminiBaslat();
 
-            if (typeof window !== 'undefined' && window.innerWidth >= 769) {
+            if (typeof window !== 'undefined') {
+              if (window.innerWidth >= 769) {
+                try {
+                  masaustuSidebarYonetimi();
+                } catch (err) {
+                  console.warn('Masaüstü sidebar yönetimi hatası:', err);
+                }
+              }
               try {
-                masaustuSidebarYonetimi();
+                bindViewportResizeHandler();
               } catch (err) {
-                console.warn('Masaüstü sidebar yönetimi hatası:', err);
+                console.warn('Viewport resize bağlama hatası:', err);
               }
             }
           }, 100);
@@ -143,7 +151,7 @@ export function loginEventleri(hooks: LoginFlowHooks): void {
       Helpers.toast('Uygulama başlatılırken hata oluştu!', 'error');
       const appContainer = Helpers.$('.app-container');
       if (appContainer) {
-        (appContainer as HTMLElement).style.display = 'flex';
+        appContainer.classList.remove('app-container--prelogin');
       }
       splashScreenKapat();
     }

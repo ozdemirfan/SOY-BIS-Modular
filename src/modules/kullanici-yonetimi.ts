@@ -92,13 +92,13 @@ function kullaniciYonetimiEventleri(): void {
 
       if (sifreTekrar.length > 0) {
         if (sifre !== sifreTekrar) {
-          if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).style.display = 'block';
+          if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).classList.add('is-visible');
           if (sifreTekrarInput) {
             sifreTekrarInput.setCustomValidity('Şifreler eşleşmiyor');
             sifreTekrarInput.classList.add('error');
           }
         } else {
-          if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).style.display = 'none';
+          if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).classList.remove('is-visible');
           if (sifreTekrarInput) {
             sifreTekrarInput.setCustomValidity('');
             sifreTekrarInput.classList.remove('error');
@@ -108,7 +108,7 @@ function kullaniciYonetimiEventleri(): void {
           }
         }
       } else {
-        if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).style.display = 'none';
+        if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).classList.remove('is-visible');
         if (sifreTekrarInput) {
           sifreTekrarInput.setCustomValidity('');
           sifreTekrarInput.classList.remove('error', 'validated-success');
@@ -172,7 +172,7 @@ async function kullaniciKaydet(): Promise<void> {
   if (sifre !== sifreTekrar) {
     Helpers.toast('Şifreler eşleşmiyor!', 'error');
     const sifreUyusmazlikEl = Helpers.$('#sifreUyusmazlik');
-    if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).style.display = 'block';
+    if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).classList.add('is-visible');
     return;
   }
 
@@ -223,7 +223,7 @@ export function formuTemizle(): void {
 
   // Şifre uyuşmazlık mesajını gizle
   const sifreUyusmazlikEl = Helpers.$('#sifreUyusmazlik');
-  if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).style.display = 'none';
+  if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).classList.remove('is-visible');
 
   // Input class'larını temizle
   const sifreInput = Helpers.$('#yeniSifre') as HTMLInputElement | null;
@@ -338,7 +338,7 @@ export function kullaniciListesiniGuncelle(): void {
       </div>`,
         ],
         {
-          labels: ['Kullanıcı Adı', 'Ad Soyad', 'Rol', 'E-posta', 'Durum', ''],
+          labels: ['Kullanıcı Adı', 'Ad Soyad', 'Rol', 'E-posta', 'Durum', 'İşlemler'],
         }
       );
 
@@ -381,7 +381,7 @@ export function kullaniciDuzenle(id: number): void {
 
   // Şifre uyuşmazlık mesajını gizle
   const sifreUyusmazlikEl = Helpers.$('#sifreUyusmazlik');
-  if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).style.display = 'none';
+  if (sifreUyusmazlikEl) (sifreUyusmazlikEl as HTMLElement).classList.remove('is-visible');
 
   const form = Helpers.$('#kullaniciEkleForm');
   const kaydetBtn = form?.querySelector('button[type="submit"]');

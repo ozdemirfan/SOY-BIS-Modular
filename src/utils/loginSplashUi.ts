@@ -19,7 +19,11 @@ export function splashScreenKapat(): void {
   const splash = document.getElementById('splashScreen');
   if (splash) {
     setTimeout(() => {
-      splash.classList.add('hidden');
+      const el = splash as HTMLElement;
+      el.classList.add('hidden');
+      /* splashScreenGoster() display:flex !important bırakıyor; kaldırılmazsa gizleme uygulanmaz */
+      el.style.removeProperty('display');
+      el.style.setProperty('display', 'none', 'important');
       setTimeout(() => {
         splash.remove();
       }, 500);
@@ -41,15 +45,33 @@ export function loginOverlayGoster(): void {
     if (loginLogo) {
       loginLogo.style.display = '';
     }
+
+    // Klavye akışı: overlay görünür olduktan sonra ilk input'a focus
+    const odakla = (): void => {
+      const kullaniciAdiInput = overlay.querySelector(
+        '#loginKullaniciAdi'
+      ) as HTMLInputElement | null;
+      if (kullaniciAdiInput) {
+        kullaniciAdiInput.focus();
+        kullaniciAdiInput.select();
+      }
+    };
+
+    requestAnimationFrame(() => {
+      odakla();
+      setTimeout(odakla, 30);
+    });
   }
   const appContainer = Helpers.$('.app-container');
   if (appContainer) {
-    (appContainer as HTMLElement).style.display = 'none';
+    appContainer.classList.add('app-container--prelogin');
   }
   const splash = Helpers.$('#splashScreen');
   if (splash) {
-    (splash as HTMLElement).style.display = 'none';
-    splash.classList.add('hidden');
+    const s = splash as HTMLElement;
+    s.style.removeProperty('display');
+    s.classList.add('hidden');
+    s.style.setProperty('display', 'none', 'important');
   }
 }
 
@@ -70,6 +92,6 @@ export function loginOverlayGizle(): void {
   }
   const appContainer = Helpers.$('.app-container');
   if (appContainer) {
-    (appContainer as HTMLElement).style.display = 'flex';
+    appContainer.classList.remove('app-container--prelogin');
   }
 }

@@ -24,6 +24,14 @@ export interface Session {
   girisTarihi: string;
 }
 
+/** Kulüp içi antrenman grubu (merkezi liste, `soybis_antrenman_gruplari`) */
+export interface AntrenmanGrubu {
+  id: string;
+  ad: string;
+  /** Spor branşı (Futbol, Basketbol, …). Eski kayıtlarda boş olabilir. */
+  brans?: string;
+}
+
 // Sporcu Types
 export interface Sporcu {
   id: number;
@@ -89,8 +97,9 @@ export interface Sporcu {
   };
   tffGruplari: {
     anaGrup?: string;
-    kucukGrup?: string;
   };
+  /** Merkezi antrenman grubu listesinden atama (`Storage.antrenmanGruplariGetir`) */
+  antrenmanGrubuId?: string;
   belgeler: {
     saglikRaporu?: string | null;
     lisans?: string | null;
@@ -189,6 +198,7 @@ export const STORAGE_KEYS = {
   AYARLAR: 'soybis_ayarlar',
   KULLANICILAR: 'soybis_kullanicilar',
   BASLANGIC_BAKIYESI: 'soybis_baslangic_bakiyesi',
+  ANTRENMAN_GRUPLARI: 'soybis_antrenman_gruplari',
 } as const;
 
 // Utility Types

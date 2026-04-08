@@ -4,8 +4,14 @@
  */
 
 import type { Session, UserRole } from '../types';
-import { apiCacheWarmup, kullaniciSifreDogrula, kullanicilariGetir, sifreHash } from './storage';
+import {
+  syncLocalCacheFromServerAfterAuth,
+  kullaniciSifreDogrula,
+  kullanicilariGetir,
+  sifreHash,
+} from './storage';
 import { apiPost } from '../services/apiClient';
+import { toast } from './helpers';
 
 // Oturum anahtarları
 const SESSION_KEY = 'soybis_oturum';
@@ -56,8 +62,14 @@ export async function girisYap(kullaniciAdi: string, sifre: string): Promise<Ses
       };
 
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(oturumBilgisi));
-      // Login sonrası cache'i doldur ki mevcut Storage API'leri sync çalışmaya devam etsin.
-      await apiCacheWarmup();
+      // Önce yerel uygulama önbelleğini temizle, sunucudan doldur (paylaşımlı DB tek kaynak).
+      const warmed = await syncLocalCacheFromServerAfterAuth();
+      if (!warmed) {
+        toast(
+          'Sunucu verisi yüklenemedi; liste boş görünebilir. Bağlantıyı kontrol edip sayfayı yenileyin.',
+          'warning'
+        );
+      }
       return oturumBilgisi;
     }
 

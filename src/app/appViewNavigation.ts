@@ -12,6 +12,7 @@ import * as KullaniciYonetimi from '../modules/kullanici-yonetimi';
 import { loginOverlayGoster } from '../utils/loginSplashUi';
 import { canAccessView, defaultViewIdForRole } from './viewAccess';
 import { aramaKutulariniTemizle, formInputlariniTemizle } from '../utils/appFormCleanup';
+import { topluZamButonuOlustur } from '../modules/ayarlar';
 
 /** app.ts state + ayarlar paneli ile köprü (döngüsel import önlenir) */
 export interface ViewNavigationContext {
@@ -299,8 +300,10 @@ export function viewGoster(ctx: ViewNavigationContext, viewId: string, ilkBaslat
         }
       }
 
-      // Aidat modülü filtre sıfırlama
+      // Aidat: sadece modülden çıkınca sıfırla (her view değişiminde çağrılırsa varsayılan "Ödemeyenler" bozuluyordu)
+      const aidattanCikis = oncekiView === 'aidat' && viewId !== 'aidat';
       if (
+        aidattanCikis &&
         typeof window !== 'undefined' &&
         window.Aidat &&
         typeof Aidat.filtreSifirla === 'function'
@@ -453,6 +456,11 @@ export function viewGuncellemeleri(ctx: ViewNavigationContext, viewId: string): 
         } else {
           console.warn('⚠️ window.Aidat bulunamadı');
         }
+        try {
+          topluZamButonuOlustur();
+        } catch (e) {
+          console.warn('Toplu zam kartı:', e);
+        }
         break;
       case 'yoklama':
         console.log('📋 [App] Yoklama güncelleniyor...');
@@ -461,6 +469,9 @@ export function viewGuncellemeleri(ctx: ViewNavigationContext, viewId: string): 
           window.Yoklama &&
           typeof Yoklama.listeyiGuncelle === 'function'
         ) {
+          if (typeof Yoklama.yoklamaFiltreleriniDoldur === 'function') {
+            Yoklama.yoklamaFiltreleriniDoldur();
+          }
           Yoklama.listeyiGuncelle();
         } else {
           console.warn('⚠️ [App] Yoklama.listeyiGuncelle bulunamadı!', {

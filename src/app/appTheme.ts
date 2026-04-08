@@ -46,10 +46,7 @@ export function temaYonetiminiBaslat(): void {
   const signal = themeAbortController.signal;
 
   const kayitliTema = localStorage.getItem('soybis_theme');
-  const sistemTemasi = window.matchMedia('(prefers-color-scheme: light)').matches
-    ? 'light'
-    : 'dark';
-  const tema = kayitliTema || sistemTemasi;
+  const tema = kayitliTema || 'dark';
 
   if (tema === 'light') {
     document.body.classList.add('light-mode');
@@ -64,20 +61,5 @@ export function temaYonetiminiBaslat(): void {
     themeToggle.addEventListener('click', temaDegistir, { signal });
   }
 
-  if (!kayitliTema) {
-    window.matchMedia('(prefers-color-scheme: light)').addEventListener(
-      'change',
-      e => {
-        if (!localStorage.getItem('soybis_theme')) {
-          if (e.matches) {
-            document.body.classList.add('light-mode');
-          } else {
-            document.body.classList.remove('light-mode');
-          }
-          temaIkonunuGuncelle();
-        }
-      },
-      { signal }
-    );
-  }
+  // Varsayilan tema karari sistem temasini takip etmez; sadece kullanici secimiyle degisir.
 }

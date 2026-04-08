@@ -51,3 +51,28 @@ export function handleResize(): void {
     document.body.style.overflow = '';
   }
 }
+
+let viewportResizeInitialized = false;
+
+/**
+ * Mobil girişte de masaüstüne genişletince overlay/sidebar durumunun temizlenmesi için
+ * resize dinleyicisini her zaman tek seferlik bağlar (masaustuSidebarYonetimi yalnızca geniş ekranda çağrılır).
+ */
+export function bindViewportResizeHandler(): void {
+  if (typeof window === 'undefined' || viewportResizeInitialized) return;
+  viewportResizeInitialized = true;
+
+  let resizeTimer: ReturnType<typeof setTimeout>;
+  const debounced = () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => handleResize(), 100);
+  };
+
+  window.addEventListener('resize', debounced);
+  const vv = window.visualViewport;
+  if (vv) {
+    vv.addEventListener('resize', debounced);
+  }
+
+  setTimeout(() => handleResize(), 0);
+}

@@ -12,6 +12,7 @@ import { klavyeKisayollari } from './appKeyboardShortcuts';
 import { temaYonetiminiBaslat } from './appTheme';
 import { hamburgerMenuEventleri } from './appMobileNav';
 import { masaustuSidebarYonetimi } from './appDesktopSidebar';
+import { bindViewportResizeHandler } from '../utils/responsiveLayout';
 import { loginEventleri, type LoginFlowHooks } from './appLoginFlow';
 import { navIndicatorGuncelle } from './appViewNavigation';
 
@@ -42,8 +43,10 @@ export async function bootstrapApp(ctx: AppBootstrapContext): Promise<void> {
 
   const splash = Helpers.$('#splashScreen');
   if (splash) {
-    (splash as HTMLElement).style.display = 'none';
-    splash.classList.add('hidden');
+    const s = splash as HTMLElement;
+    s.style.removeProperty('display');
+    s.classList.add('hidden');
+    s.style.setProperty('display', 'none', 'important');
   }
 
   const loginOverlay = Helpers.$('#loginOverlay');
@@ -82,7 +85,7 @@ export async function bootstrapApp(ctx: AppBootstrapContext): Promise<void> {
     const appContainer = Helpers.$('.app-container');
     if (appContainer) {
       requestAnimationFrame(() => {
-        (appContainer as HTMLElement).style.display = 'flex';
+        appContainer.classList.remove('app-container--prelogin');
 
         setTimeout(() => {
           const sidebarLogo = Helpers.$('.sidebar-logo');
@@ -91,7 +94,7 @@ export async function bootstrapApp(ctx: AppBootstrapContext): Promise<void> {
           }
           const headerLogo = Helpers.$('.header-logo');
           if (headerLogo) {
-            (headerLogo as HTMLImageElement).style.display = '';
+            headerLogo.classList.remove('header-logo--hidden');
           }
         }, 100);
       });
@@ -105,8 +108,10 @@ export async function bootstrapApp(ctx: AppBootstrapContext): Promise<void> {
   }
 
   if (splash) {
-    (splash as HTMLElement).style.display = 'none';
-    splash.classList.add('hidden');
+    const s = splash as HTMLElement;
+    s.style.removeProperty('display');
+    s.classList.add('hidden');
+    s.style.setProperty('display', 'none', 'important');
     setTimeout(() => {
       splash.remove();
     }, 0);
@@ -168,11 +173,18 @@ export async function bootstrapApp(ctx: AppBootstrapContext): Promise<void> {
       console.warn('Hamburger menü eventleri hatası:', e);
     }
 
-    if (typeof window !== 'undefined' && window.innerWidth >= 769) {
+    if (typeof window !== 'undefined') {
+      if (window.innerWidth >= 769) {
+        try {
+          masaustuSidebarYonetimi();
+        } catch (e) {
+          console.warn('Masaüstü sidebar yönetimi hatası:', e);
+        }
+      }
       try {
-        masaustuSidebarYonetimi();
+        bindViewportResizeHandler();
       } catch (e) {
-        console.warn('Masaüstü sidebar yönetimi hatası:', e);
+        console.warn('Viewport resize bağlama hatası:', e);
       }
     }
 

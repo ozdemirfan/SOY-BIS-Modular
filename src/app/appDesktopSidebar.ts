@@ -1,5 +1,4 @@
 import * as Helpers from '../utils/helpers';
-import { handleResize } from '../utils/responsiveLayout';
 
 export function toggleDesktopSidebar(): void {
   const sidebar = Helpers.$('#sidebar');
@@ -57,25 +56,5 @@ export function masaustuSidebarYonetimi(): void {
       e.stopPropagation();
       toggleDesktopSidebar();
     });
-  }
-
-  let resizeTimer: ReturnType<typeof setTimeout>;
-  if (typeof window !== 'undefined') {
-    const existingHandler = (window as any).__soybis_resize_handler;
-    if (existingHandler) {
-      window.removeEventListener('resize', existingHandler);
-    }
-
-    const resizeHandler = function () {
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(function () {
-        handleResize();
-      }, 100);
-    };
-
-    (window as any).__soybis_resize_handler = resizeHandler;
-
-    window.addEventListener('resize', resizeHandler);
-    setTimeout(() => handleResize(), 100);
   }
 }
