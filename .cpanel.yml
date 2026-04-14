@@ -1,11 +1,5 @@
 ---
+# Runs one script so all steps share the same shell (cPanel may run each task in a new shell).
 deployment:
   tasks:
-    - export DEPLOYPATH=/home/u2626680/public_html/
-    - /bin/mkdir -p $DEPLOYPATH
-    - /bin/cp -R dist/* $DEPLOYPATH
-    - /bin/cp index.html $DEPLOYPATH
-    - /bin/cp -R js $DEPLOYPATH
-    - /bin/cp -R css $DEPLOYPATH
-    - /bin/cp logo.png $DEPLOYPATH
-    - /bin/cp -R api $DEPLOYPATH
+    - /bin/bash /home/u2626680/repositories/SOY-BIS-Modular/scripts/cpanel-deploy.sh
