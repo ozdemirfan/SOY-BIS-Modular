@@ -460,6 +460,14 @@ export function sporcuKaydet(sporcu: Partial<Sporcu> & { id?: number }): Sporcu 
       }
       return updated;
     }
+    // id var ama listede yok: sessiz fallthrough yerine yeni kayıt
+    console.warn(
+      '[SOY-BIS] sporcuKaydet: id listede yok, yeni kayıt olarak ekleniyor:',
+      normalizedSporcu.id
+    );
+    const yeniden: Partial<Sporcu> & { id?: number } = { ...normalizedSporcu };
+    delete yeniden.id;
+    return sporcuKaydet(yeniden);
   } else {
     // Yeni kayıt
     // MySQL sporcular.id / aidatlar.sporcuId kolonları INT: Date.now() değerleri taşar (2147483647).
@@ -520,16 +528,6 @@ export function sporcuKaydet(sporcu: Partial<Sporcu> & { id?: number }): Sporcu 
 
     return yeniSporcuTemiz;
   }
-
-  // Güncelleme durumunda localStorage'a kaydet
-  kaydet(STORAGE_KEYS.SPORCULAR, sporcular);
-  const updated = sporcular.find(s => s.id === normalizedSporcu.id) as Sporcu;
-  if (API_ENABLED) {
-    void apiPost('/sporcular', updated).catch(err =>
-      notifyApiSyncFailure('Sporcu güncelleme', err)
-    );
-  }
-  return updated;
 }
 
 /**

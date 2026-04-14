@@ -2102,6 +2102,39 @@ function sporcuKayitYeniModMu(): boolean {
   return !!kaydetBtn?.classList.contains('btn-success');
 }
 
+/** #sporcuIdGuncelle — boş veya geçersiz = yeni kayıt; dolu ve listede varsa düzenleme */
+function sporcuDuzenlemeHiddenOku(): number | null {
+  const el = Helpers.$('#sporcuIdGuncelle') as HTMLInputElement | null;
+  const raw = (el?.value ?? '').trim();
+  if (!raw) return null;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (!Storage.sporcuBul(n)) {
+    console.warn('[Sporcu] sporcuIdGuncelle listede yok, yeni kayıt sayılacak:', raw);
+    return null;
+  }
+  return n;
+}
+
+function sporcuDuzenlemeHiddenYaz(id: number | null): void {
+  const el = Helpers.$('#sporcuIdGuncelle') as HTMLInputElement | null;
+  if (!el) return;
+  el.value = id != null && id > 0 ? String(id) : '';
+}
+
+/**
+ * Kayıtta kullanılacak düzenleme ID: önce hidden, yoksa (güncelle butonu) guncellenecekId yedek.
+ * Teşhis: localStorage `soybis_sporcular` ikinci kayıt sonrası 2 öğe; Ağ'da POST/GET kontrolü; üretimde güncel bundle.
+ */
+function kayitIcinDuzenlemeIdHesapla(): number | null {
+  let id = sporcuDuzenlemeHiddenOku();
+  if (id !== null) return id;
+  if (sporcuKayitYeniModMu()) return null;
+  const gid = guncellenecekId;
+  if (gid != null && Storage.sporcuBul(gid)) return gid;
+  return null;
+}
+
 function kaydet(): void {
   try {
     // 1. Form verilerini topla ve kontrol et
@@ -2110,8 +2143,7 @@ function kaydet(): void {
       return; // Hata mesajı zaten gösterildi
     }
 
-    // Yeni kayıt modu (buton yeşil): guncellenecekId yanlışlıkla dolu kalsa bile güncelleme yapma
-    const kayitIcinDuzenlemeId: number | null = sporcuKayitYeniModMu() ? null : guncellenecekId;
+    const kayitIcinDuzenlemeId = kayitIcinDuzenlemeIdHesapla();
 
     // 2. Validation kontrolü
     const validationResult = Validation.sporcuFormDogrula(formData);
@@ -2464,6 +2496,7 @@ export function formuTemizle(): void {
   if (form) form.reset();
 
   guncellenecekId = null;
+  sporcuDuzenlemeHiddenYaz(null);
 
   const yasGrubuEl = Helpers.$('#autoYasGrubu');
   if (yasGrubuEl) yasGrubuEl.textContent = 'Hesaplanacak';
@@ -2564,6 +2597,7 @@ export function duzenle(id: number): void {
   }
 
   guncellenecekId = id;
+  sporcuDuzenlemeHiddenYaz(id);
 
   // Formu doldur
   const adSoyadInput = Helpers.$('#adSoyad') as HTMLInputElement | null;
@@ -2707,6 +2741,7 @@ export function duzenle(id: number): void {
       // ÖNEMLİ: viewGoster içinde formuTemizle() çağrılıyor ve guncellenecekId'yi null yapıyor
       // Bu yüzden burada tekrar set etmeliyiz
       guncellenecekId = id;
+      sporcuDuzenlemeHiddenYaz(id);
       // Formu tekrar doldur (viewGoster form temizledi, bu yüzden tekrar doldurmalıyız)
       if (adSoyadInput) adSoyadInput.value = sporcu.temelBilgiler?.adSoyad || '';
       if (tcKimlikInput) tcKimlikInput.value = sporcu.temelBilgiler?.tcKimlik || '';
