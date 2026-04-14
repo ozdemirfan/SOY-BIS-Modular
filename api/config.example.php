@@ -1,6 +1,7 @@
 <?php
 // Bu dosyayı kopyalayın: cp config.example.php config.php
 // Ardından cPanel MySQL bilgilerinizi girin. config.php Git'e eklenmez.
+// İlk cPanel Git deploy: scripts/cpanel-deploy.sh config.php yoksa örnekten oluşturur; sonra burayı düzenleyin.
 
 declare(strict_types=1);
 
