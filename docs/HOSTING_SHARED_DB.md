@@ -10,7 +10,7 @@ Bu doküman, SOY-BIS’i tarayıcıdaki `localStorage` modundan **paylaşımlı 
 ### Kurulum kontrol listesi
 - [ ] MySQL veritabanı + kullanıcı oluşturuldu, kullanıcıya DB yetkisi verildi
 - [ ] `docs/db_schema_mysql.sql` içe aktarıldı
-- [ ] `api/config.php` içinde `db.*` ve gerekirse `default_admin` güncellendi
+- [ ] `api/config.example.php` → `api/config.php` kopyalandı ve `db.*` ile gerekirse `default_admin` güncellendi
 - [ ] `api/` klasörü web kökünde `/api` altında; `api/.htaccess` mevcut
 - [ ] Front-end build’de `VITE_SOYBIS_API_BASE` doğru (çoğu kurulum: `/api`)
 - [ ] HTTPS kullanılıyorsa `api/config.php` içinde `session.secure` → `true` (ve tarayıcıda çerezlerin çalıştığı doğrulandı)
@@ -23,7 +23,7 @@ Bu doküman, SOY-BIS’i tarayıcıdaki `localStorage` modundan **paylaşımlı 
    - İçerikte tablolar: `users`, `sporcular`, `aidatlar`, `yoklamalar`, `giderler`, `antrenorler`, `ayarlar`, `baslangic_bakiyesi`, `yoklama_audit`
 
 ## 2. API DB bağlantısını ayarla (`api/config.php`)
-`api/config.php` içindeki şu alanları kendi DB bilgilerinle değiştir:
+Git deposunda gerçek şifre bulunmaz. Sunucuda `api/config.example.php` dosyasını `api/config.php` olarak kopyalayın, ardından şu alanları kendi DB bilgilerinizle doldurun:
 - `db.host`
 - `db.name`
 - `db.user`
@@ -41,7 +41,7 @@ Proje root’undan üretim ortamına şu klasörü kopyalayın:
 
 `api/` içinde ayrıca:
 - `api/index.php`
-- `api/config.php`
+- `api/config.php` (örnek: `api/config.example.php` üzerinden oluşturun)
 - `.htaccess`
 - `routes/*.php`
 

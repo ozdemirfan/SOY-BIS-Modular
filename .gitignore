@@ -11,6 +11,9 @@ coverage/
 dist/
 build/
 
+# PHP API — gerçek DB bilgileri (config.example.php şablonunu kopyalayın)
+api/config.php
+
 # Environment variables
 .env
 .env.local
