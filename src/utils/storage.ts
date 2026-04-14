@@ -11,7 +11,14 @@ import { apiDelete, apiGet, apiPost } from '../services/apiClient';
 
 // Hostingte env gömülmese bile shared DB modunun zorunlu çalışması için true.
 const API_ENABLED = true;
+/** MySQL signed INT üst sınırı (2^31-1) */
 const MAX_DB_INT_ID = 2147483647;
+/**
+ * PK olarak kullanılacak maksimum ID: MAX_DB_INT_ID - 1.
+ * 2147483647 taşma/saturation ile gelince tüm kayıtlar aynı PK'ya yazılabiliyordu;
+ * yeni ID'ler yalnızca 1..2147483646 aralığında üretilir.
+ */
+const MAX_SAFE_INT_PK = MAX_DB_INT_ID - 1;
 
 /** Arka plan API hatası — konsol (toast spam’ini önlemek için kaydet() tetikli senkronlarda sadece bu). */
 function logApiSyncFailure(context: string, error: unknown): void {
@@ -54,25 +61,31 @@ interface UserWithPassword extends Partial<User> {
 
 function isValidDbIntId(value: unknown): value is number {
   return (
-    typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= MAX_DB_INT_ID
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value > 0 &&
+    value <= MAX_SAFE_INT_PK
   );
 }
 
 function generateDbSafeId(existingIds: number[]): number {
-  const usedIds = new Set(existingIds.filter(isValidDbIntId));
-  const baseId = Date.now() % MAX_DB_INT_ID;
+  // Çakışma: listede görülen her pozitif tam sayı (2147483647 dahil) dolu sayılır
+  const usedIds = new Set(
+    existingIds.filter(n => typeof n === 'number' && Number.isInteger(n) && n > 0)
+  );
+  const span = MAX_SAFE_INT_PK;
+  const base = Date.now() % span;
 
-  // Deterministik bir aralıkta ilerleyerek çakışmasız ve INT uyumlu ID üret.
+  // Deterministik: 1..2147483646 (2147483647 üretme — rastgele dal eski hataydı)
   for (let offset = 0; offset < 10000; offset++) {
-    const candidate = (baseId + offset) % MAX_DB_INT_ID || 1;
+    const candidate = ((base + offset) % span) + 1;
     if (!usedIds.has(candidate)) {
       return candidate;
     }
   }
 
-  // Çok düşük olasılıklı yoğun çakışma durumunda rastgele fallback.
   for (let attempt = 0; attempt < 10000; attempt++) {
-    const candidate = Math.floor(Math.random() * MAX_DB_INT_ID) + 1;
+    const candidate = Math.floor(Math.random() * span) + 1;
     if (!usedIds.has(candidate)) {
       return candidate;
     }
