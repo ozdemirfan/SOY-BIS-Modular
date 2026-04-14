@@ -3416,7 +3416,7 @@ export function listeFiltreleriniSifirla(): void {
  */
 function sporcuListesiOzetKartlariniGuncelle(sporcular: Sporcu[]): void {
   const operasyonel = sporcular.filter(s => s.durum !== 'Ayrıldı');
-  const toplam = operasyonel.length;
+  const toplamKayit = sporcular.length;
   const aktif = sporcular.filter(s => s.durum === 'Aktif').length;
   const pasif = sporcular.filter(s => s.durum === 'Pasif').length;
 
@@ -3431,7 +3431,11 @@ function sporcuListesiOzetKartlariniGuncelle(sporcular: Sporcu[]): void {
     if (el) el.textContent = String(n);
   };
 
-  setVal('#summaryToplamSporcu', toplam);
+  setVal('#summaryToplamSporcu', toplamKayit);
+  const ayrilanlarHaricEl = Helpers.$('#summaryAyrilanlarHaric');
+  if (ayrilanlarHaricEl) {
+    ayrilanlarHaricEl.textContent = `Ayrılanlar hariç: ${operasyonel.length}`;
+  }
   setVal('#summaryAktifSporcu', aktif);
   setVal('#summaryPasifSporcu', pasif);
   setVal('#summaryBransSayisi', bransSet.size);
@@ -3442,6 +3446,9 @@ function sporcuListesiOzetKartlariniGuncelle(sporcular: Sporcu[]): void {
  */
 export function listeyiGuncelle(): void {
   try {
+    const sporcular = Storage.sporculariGetir();
+    sporcuListesiOzetKartlariniGuncelle(sporcular);
+
     const listContainer =
       document.getElementById('sporcuListesi') ?? (Helpers.$('#sporcuListesi') as HTMLElement | null);
 
@@ -3451,9 +3458,6 @@ export function listeyiGuncelle(): void {
 
     // Önce empty state'i gizle (smooth transition için)
     Helpers.hideEmptyState('#emptyState');
-
-    const sporcular = Storage.sporculariGetir();
-    sporcuListesiOzetKartlariniGuncelle(sporcular);
 
     // Loading state göster (eğer mevcut kayıtlar varsa)
     if (sporcular.length > 0 && listContainer.children.length > 0) {

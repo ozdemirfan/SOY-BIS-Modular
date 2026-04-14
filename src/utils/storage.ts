@@ -416,15 +416,48 @@ export function sporculariGetir(): Sporcu[] {
   return finalizeSporcularList(base);
 }
 
+/**
+ * Okuma sırasında sporcu.durum değerini şemaya oturtur (boş/legacy/API yazım farkları).
+ */
+function normalizeSporcuDurumValue(raw: string | undefined | null): Sporcu['durum'] {
+  if (raw === 'Aktif' || raw === 'Pasif' || raw === 'Ayrıldı') {
+    return raw;
+  }
+  const t = (raw ?? '').trim();
+  if (!t) {
+    return 'Aktif';
+  }
+  const lower = t.toLocaleLowerCase('tr-TR');
+  if (lower === 'aktif' || lower === 'active') {
+    return 'Aktif';
+  }
+  if (lower === 'pasif' || lower === 'passive') {
+    return 'Pasif';
+  }
+  const compact = lower.replace(/\s/g, '');
+  const foldDotlessI = compact.replace(/ı/g, 'i');
+  if (compact === 'ayrıldı' || foldDotlessI === 'ayrildi') {
+    return 'Ayrıldı';
+  }
+  return 'Aktif';
+}
+
 function finalizeSporcularList(rawList: Sporcu[]): Sporcu[] {
   let anyLegacy = false;
+  let anyDurumFix = false;
   const list = rawList.map(s => {
     if ((s.tffGruplari as { kucukGrup?: string } | undefined)?.kucukGrup) {
       anyLegacy = true;
     }
-    return sporcuLegacyKucukGrupMigrate(s);
+    let x = sporcuLegacyKucukGrupMigrate(s);
+    const nd = normalizeSporcuDurumValue(x.durum);
+    if (nd !== x.durum) {
+      anyDurumFix = true;
+      x = { ...x, durum: nd };
+    }
+    return x;
   });
-  if (anyLegacy) {
+  if (anyLegacy || anyDurumFix) {
     kaydet(STORAGE_KEYS.SPORCULAR, list);
   }
   return list;
