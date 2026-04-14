@@ -150,6 +150,9 @@ declare global {
 // Güncellenen sporcu ID'si
 let guncellenecekId: number | null = null;
 
+/** duzenle() içindeki setTimeout — iptal edilmezse geç yeni kayıtta yanlış ID ile güncelleme yapılabilir */
+let duzenleZamanlayici: number | null = null;
+
 // Sorting state
 interface SortConfig {
   field: 'adSoyad' | 'tcKimlik' | 'brans' | 'yasGrubu' | 'telefon' | 'aylikUcret' | 'durum' | null;
@@ -1962,7 +1965,10 @@ function collectAndValidateFormData(): FormData | null {
 /**
  * Sporcu objesi oluştur
  */
-function createSporcuObject(formData: FormData): Partial<Sporcu> {
+function createSporcuObject(
+  formData: FormData,
+  duzenlemeId: number | null = guncellenecekId
+): Partial<Sporcu> {
   // Ek form alanlarını al
   const formaNoInput = Helpers.$('#formaNo') as HTMLInputElement | null;
   const veli2AdInput = Helpers.$('#veli2Ad') as HTMLInputElement | null;
@@ -1989,7 +1995,7 @@ function createSporcuObject(formData: FormData): Partial<Sporcu> {
   const veli2TelResult = veli2TelValue ? Validation.telefonDogrula(veli2TelValue) : null;
 
   return {
-    id: guncellenecekId || undefined,
+    id: duzenlemeId || undefined,
     temelBilgiler: {
       adSoyad: formData.adSoyad,
       tcKimlik: formData.tcKimlik,
@@ -2054,19 +2060,23 @@ function createSporcuObject(formData: FormData): Partial<Sporcu> {
 /**
  * Kayıt tarihini belirle
  */
-function determineKayitTarihi(formData: FormData, sporcu: Partial<Sporcu>): string {
+function determineKayitTarihi(
+  formData: FormData,
+  sporcu: Partial<Sporcu>,
+  duzenlemeId: number | null = guncellenecekId
+): string {
   const kayitTarihiStr = formData.kayitTarihi;
   const kayitTarihiDate = kayitTarihiStr ? new Date(kayitTarihiStr) : new Date();
   const kayitTarihiValid = !isNaN(kayitTarihiDate.getTime()) ? kayitTarihiDate : new Date();
 
-  if (!guncellenecekId) {
+  if (!duzenlemeId) {
     return kayitTarihiValid.toISOString();
   } else {
-    const mevcutSporcu = Storage.sporcuBul(guncellenecekId);
+    const mevcutSporcu = Storage.sporcuBul(duzenlemeId);
     if (mevcutSporcu?.kayitTarihi) {
       return mevcutSporcu.kayitTarihi;
     } else {
-      const idTarih = new Date(guncellenecekId);
+      const idTarih = new Date(duzenlemeId);
       return !isNaN(idTarih.getTime()) ? idTarih.toISOString() : kayitTarihiValid.toISOString();
     }
   }
@@ -2087,6 +2097,11 @@ function determineKayitTarihi(formData: FormData, sporcu: Partial<Sporcu>): stri
 /**
  * Sporcu kaydet
  */
+function sporcuKayitYeniModMu(): boolean {
+  const kaydetBtn = Helpers.$('#kaydetBtn') as HTMLButtonElement | null;
+  return !!kaydetBtn?.classList.contains('btn-success');
+}
+
 function kaydet(): void {
   try {
     // 1. Form verilerini topla ve kontrol et
@@ -2094,6 +2109,9 @@ function kaydet(): void {
     if (!formData) {
       return; // Hata mesajı zaten gösterildi
     }
+
+    // Yeni kayıt modu (buton yeşil): guncellenecekId yanlışlıkla dolu kalsa bile güncelleme yapma
+    const kayitIcinDuzenlemeId: number | null = sporcuKayitYeniModMu() ? null : guncellenecekId;
 
     // 2. Validation kontrolü
     const validationResult = Validation.sporcuFormDogrula(formData);
@@ -2107,10 +2125,10 @@ function kaydet(): void {
 
     // 3. TC kontrol (benzersizlik)
     if (formData.tcKimlik && formData.tcKimlik.trim()) {
-      const tcKayitliMi = Storage.tcKontrol(formData.tcKimlik, guncellenecekId);
+      const tcKayitliMi = Storage.tcKontrol(formData.tcKimlik, kayitIcinDuzenlemeId);
       console.log('🔍 [Sporcu] TC kontrol:', {
         tc: formData.tcKimlik,
-        guncellenecekId: guncellenecekId,
+        guncellenecekId: kayitIcinDuzenlemeId,
         tcKayitliMi: tcKayitliMi,
       });
       if (tcKayitliMi) {
@@ -2120,24 +2138,24 @@ function kaydet(): void {
     }
 
     // 4. Sporcu objesi oluştur
-    const sporcu = createSporcuObject(formData);
+    const sporcu = createSporcuObject(formData, kayitIcinDuzenlemeId);
 
     // 5. Kayıt tarihini belirle
-    sporcu.kayitTarihi = determineKayitTarihi(formData, sporcu);
+    sporcu.kayitTarihi = determineKayitTarihi(formData, sporcu, kayitIcinDuzenlemeId);
 
     // 6. Sporcu kaydet
     const kaydedilenSporcu = Storage.sporcuKaydet(sporcu);
     const sporcuId = kaydedilenSporcu.id;
 
     // 7. Yeni kayıt veya güncelleme işlemlerini yap
-    if (!guncellenecekId) {
+    if (!kayitIcinDuzenlemeId) {
       processYeniKayit(sporcu, sporcuId);
     } else {
       processGuncelleme(sporcuId);
     }
 
     // 8. Başarı mesajı ve UI güncellemeleri
-    handleSaveSuccess();
+    handleSaveSuccess(kayitIcinDuzenlemeId !== null);
   } catch (error) {
     console.error('❌ [Sporcu] kaydet hatası:', error);
     Helpers.toast('Sporcu kaydedilirken hata oluştu!', 'error');
@@ -2392,8 +2410,8 @@ function processMalzemeler(
 /**
  * Kayıt sonrası UI güncellemeleri
  */
-function handleSaveSuccess(): void {
-  const mesaj = guncellenecekId ? 'Sporcu güncellendi!' : 'Sporcu kaydedildi!';
+function handleSaveSuccess(guncellemeMi: boolean): void {
+  const mesaj = guncellemeMi ? 'Sporcu güncellendi!' : 'Sporcu kaydedildi!';
   Helpers.toast(mesaj, 'success');
 
   formuTemizle();
@@ -2437,6 +2455,11 @@ function handleSaveSuccess(): void {
  * Formu temizle
  */
 export function formuTemizle(): void {
+  if (duzenleZamanlayici !== null) {
+    clearTimeout(duzenleZamanlayici);
+    duzenleZamanlayici = null;
+  }
+
   const form = Helpers.$('#sporcuKayitForm') as HTMLFormElement | null;
   if (form) form.reset();
 
@@ -2533,6 +2556,11 @@ export function duzenle(id: number): void {
   if (!sporcu) {
     Helpers.toast('Sporcu bulunamadı!', 'error');
     return;
+  }
+
+  if (duzenleZamanlayici !== null) {
+    clearTimeout(duzenleZamanlayici);
+    duzenleZamanlayici = null;
   }
 
   guncellenecekId = id;
@@ -2674,7 +2702,8 @@ export function duzenle(id: number): void {
 
     // Form doldurma işlemini viewGoster'dan sonra yap (form temizleme işlemi tamamlandıktan sonra)
     // Kısa bir gecikme ile DOM'un hazır olmasını garanti et
-    setTimeout(() => {
+    duzenleZamanlayici = window.setTimeout(() => {
+      duzenleZamanlayici = null;
       // ÖNEMLİ: viewGoster içinde formuTemizle() çağrılıyor ve guncellenecekId'yi null yapıyor
       // Bu yüzden burada tekrar set etmeliyiz
       guncellenecekId = id;
